@@ -1,0 +1,1761 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Le Navire endormi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400;0,500;1,400&family=Alegreya+Sans:wght@400;500;700&family=IM+Fell+English:ital@0;1&display=swap">
+<style>
+/* Mise en page : la scène WebGL remplit l'écran ; carte de départ, sous-titres et carte de fin flottent par-dessus.
+   Thème unique et volontaire : une grotte, la nuit. */
+:root {
+  --abyss: #060a14;
+  --veil: rgba(7, 12, 24, 0.8);
+  --parchment: #efe6d0;
+  --mist: #a9b7cc;
+  --moon: #cfe0ff;
+  --lantern: #f2a65e;
+  --lantern-hover: #f6b675;
+  --lantern-ink: #1f1207;
+  --line: rgba(207, 224, 255, 0.16);
+  --font-display: "IM Fell English", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-story: "Alegreya", Georgia, "Times New Roman", serif;
+  --font-ui: "Alegreya Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--abyss);
+  color: var(--parchment);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.45;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+#scene, #sparks { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#sparks { pointer-events: none; }
+
+.screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding-inline: 16px;
+  padding-block: calc(env(safe-area-inset-top, 0px) + 16px) calc(env(safe-area-inset-bottom, 0px) + 16px);
+  transition: opacity 0.6s ease;
+}
+.screen.is-leaving { opacity: 0; pointer-events: none; }
+.card {
+  margin: auto;
+  width: min(100%, 31rem);
+  display: grid;
+  gap: 1.05rem;
+  padding: 1.5rem 1.4rem 1.3rem;
+  background: var(--veil);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.eyebrow { margin: 0; font-size: 0.78rem; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mist); }
+h1, h2 { margin: 0.15rem 0 0; font-family: var(--font-display); font-weight: 400; line-height: 1.02; text-wrap: balance; color: var(--parchment); }
+h1 { font-size: clamp(2.2rem, 8vw, 3rem); }
+h2 { font-size: clamp(2rem, 7vw, 2.6rem); }
+.lead { margin: 0; font-family: var(--font-story); font-size: 1.14rem; line-height: 1.5; }
+.note { margin: 0; font-size: 0.86rem; color: var(--mist); }
+
+.btn {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font: 700 1rem/1 var(--font-ui);
+  padding: 0.85rem 1.25rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  transition: transform 0.15s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+.btn:active { transform: translateY(1px); }
+.btn:focus-visible, select:focus-visible, summary:focus-visible, .toggle input:focus-visible, input[type="range"]:focus-visible, .file:focus-within {
+  outline: 2px solid var(--lantern);
+  outline-offset: 3px;
+}
+.btn-primary { background: var(--lantern); color: var(--lantern-ink); font-size: 1.08rem; padding: 1rem 1.4rem; box-shadow: 0 10px 30px rgba(242, 166, 94, 0.22); }
+.btn-primary:hover { background: var(--lantern-hover); }
+.btn-ghost { background: transparent; color: var(--parchment); border-color: var(--line); }
+.btn-ghost:hover { border-color: var(--moon); }
+.btn-link { background: none; border: 0; padding: 0.2rem 0; color: var(--moon); font-weight: 500; text-decoration: underline; text-underline-offset: 3px; justify-self: start; }
+.play-icon { width: 0; height: 0; border-left: 11px solid currentColor; border-top: 7px solid transparent; border-bottom: 7px solid transparent; }
+
+.settings { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; align-items: end; }
+.field { display: grid; gap: 0.35rem; font-size: 0.86rem; color: var(--mist); min-width: 0; flex: 1 1 14rem; }
+select, input[type="range"] { width: 100%; }
+select { font: 500 0.95rem var(--font-ui); color: var(--parchment); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line); border-radius: 10px; padding: 0.55rem 0.6rem; min-width: 0; }
+input[type="range"] { accent-color: var(--lantern); }
+.toggles { display: flex; gap: 1rem; flex-wrap: wrap; }
+.toggle { display: inline-flex; align-items: center; gap: 0.45rem; font-size: 0.92rem; cursor: pointer; }
+.toggle input { accent-color: var(--lantern); width: 1.05rem; height: 1.05rem; margin: 0; }
+
+details { border-top: 1px solid var(--line); padding-top: 0.85rem; }
+summary { cursor: pointer; font-weight: 500; color: var(--moon); }
+.mine-body { display: grid; gap: 0.8rem; padding-top: 0.8rem; }
+.mine-body p { margin: 0; font-size: 0.92rem; color: var(--mist); }
+.row { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.file { position: relative; overflow: hidden; }
+.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.status { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.3rem; font-size: 0.88rem; overflow-wrap: anywhere; }
+.status li::before { content: "✓ "; color: var(--lantern); }
+.status li.warn::before { content: "! "; color: var(--lantern); }
+
+#subtitle {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + max(5vh, 24px));
+  margin: 0;
+  padding-inline: 16px;
+  text-align: center;
+  text-wrap: balance;
+  font-family: var(--font-story);
+  font-style: italic;
+  font-size: clamp(1.3rem, 4.4vw, 2.05rem);
+  line-height: 1.3;
+  color: var(--parchment);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.9), 0 0 3px rgba(0, 0, 0, 0.9);
+  opacity: 0;
+  transition: opacity 0.45s ease;
+  pointer-events: none;
+}
+#subtitle.on { opacity: 1; }
+#stop { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); right: 16px; padding: 0.55rem 0.95rem; font-size: 0.9rem; background: rgba(7, 12, 24, 0.55); }
+#drop-hint {
+  position: fixed;
+  inset: 12px;
+  border: 2px dashed var(--lantern);
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  padding-inline: 16px;
+  text-align: center;
+  font: 700 1.2rem var(--font-ui);
+  color: var(--parchment);
+  background: rgba(6, 10, 20, 0.6);
+  pointer-events: none;
+}
+.end-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+@media (prefers-reduced-motion: reduce) {
+  .screen, #subtitle, .btn { transition: none; }
+}
+</style>
+</head>
+<body>
+<canvas id="scene" aria-hidden="true"></canvas>
+<canvas id="sparks" aria-hidden="true"></canvas>
+<p id="subtitle" aria-live="polite"></p>
+<button id="stop" class="btn btn-ghost" type="button" hidden>Arrêter</button>
+
+<section id="start" class="screen" aria-labelledby="start-title">
+  <div class="card">
+    <div>
+      <p class="eyebrow">Prototype · intro d'une quinzaine de secondes</p>
+      <h1 id="start-title">Le Navire endormi</h1>
+    </div>
+    <p class="lead">Une grotte secrète, la mer qui murmure, un bateau pirate oublié. Monte le son, ou mieux&nbsp;: mets un casque.</p>
+    <button id="play" class="btn btn-primary" type="button"><span class="play-icon" aria-hidden="true"></span>Écouter l'intro</button>
+    <div class="settings">
+      <label class="field" for="voice">Voix du conteur
+        <select id="voice"><option value="">Recherche des voix…</option></select>
+      </label>
+      <div class="toggles">
+        <label class="toggle" for="opt-subs"><input id="opt-subs" type="checkbox" checked>Sous-titres</label>
+        <label class="toggle" for="opt-music"><input id="opt-music" type="checkbox" checked>Musique</label>
+      </div>
+    </div>
+    <details id="mine">
+      <summary>Tester avec ton image et ta voix IA</summary>
+      <div class="mine-body">
+        <p>Dépose tes fichiers sur la page, ou choisis-les ici. Pour la voix&nbsp;: un seul fichier pour toute l'intro (découpé automatiquement aux silences), ou cinq fichiers numérotés, un par phrase.</p>
+        <div class="row">
+          <label class="btn btn-ghost file" for="file-image">Choisir une image<input id="file-image" type="file" accept="image/*"></label>
+          <label class="btn btn-ghost file" for="file-voice">Choisir la voix<input id="file-voice" type="file" accept="audio/*,.wav,.mp3,.ogg,.m4a,.flac,.opus" multiple></label>
+        </div>
+        <label class="field" for="waterline" id="waterline-field" hidden>Hauteur de la surface de l'eau sur ton image
+          <input id="waterline" type="range" min="0.3" max="0.9" step="0.01" value="0.62">
+        </label>
+        <ul id="mine-status" class="status"></ul>
+        <button id="reset-mine" class="btn btn-link" type="button" hidden>Revenir à l'image et à la voix d'origine</button>
+      </div>
+    </details>
+    <p class="note" id="voice-note">Voix provisoire&nbsp;: celle de ton navigateur. Les sons et l'animation sont créés en direct, sans aucun fichier.</p>
+  </div>
+</section>
+
+<section id="end" class="screen" aria-labelledby="end-title" hidden>
+  <div class="card">
+    <div>
+      <p class="eyebrow">Fin de l'intro</p>
+      <h2 id="end-title">À suivre…</h2>
+    </div>
+    <div class="end-actions">
+      <button id="replay" class="btn btn-primary" type="button">Rejouer</button>
+      <button id="back" class="btn btn-ghost" type="button">Réglages</button>
+    </div>
+  </div>
+</section>
+
+<div id="drop-hint" hidden>Dépose ton image ou ta voix ici</div>
+
+<script>
+(() => {
+'use strict';
+
+/* =========================================================================
+   1. LA SCÈNE : texte, repères sonores et visuels.
+   C'est l'embryon du futur « format d'histoire » : le lecteur ne fait que
+   jouer ce qui est décrit ici.
+   ========================================================================= */
+const SCENE = {
+  title: 'Le Navire endormi',
+  audience: '6-8 ans',
+  intro: 1.8, // secondes d'ambiance avant la première phrase
+  segments: [
+    { text: "Au fond d'une grotte secrète…", pause: 0.6 },
+    { text: 'là où la mer chante tout bas…', pause: 0.7 },
+    { text: 'dormait un bateau pirate', pause: 0.25 },
+    { text: "que personne n'avait vu depuis cent ans.", pause: 1.0 },
+    { text: "Jusqu'à cette nuit.", pause: 0.3 },
+  ],
+  // at : 'intro', 'outro' ou numéro de phrase · when : 'start' (défaut) ou 'end' · delay en secondes
+  cues: [
+    { at: 'intro', delay: 0, run: 'ambience' },
+    { at: 'intro', delay: 0, run: 'dawn' },
+    { at: 'intro', delay: 0.2, run: 'drip' },
+    { at: 0, when: 'start', delay: 0.9, run: 'drip' },
+    { at: 1, when: 'start', delay: 0.45, run: 'swell' },
+    { at: 2, when: 'start', delay: 0, run: 'revealShip' },
+    { at: 2, when: 'start', delay: 0.6, run: 'creak' },
+    { at: 3, when: 'end', delay: 0, run: 'drip' },
+    { at: 4, when: 'start', delay: 0.15, run: 'lantern' },
+    { at: 4, when: 'end', delay: 0.3, run: 'bell' },
+    { at: 'outro', delay: 2.8, run: 'endCard' },
+  ],
+};
+
+/* =========================================================================
+   2. OUTILS
+   ========================================================================= */
+const $ = (sel) => document.querySelector(sel);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+const wait = (sec) => new Promise((resolve) => setTimeout(resolve, sec * 1000));
+const reducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+const G = 1.7; // gravité des gouttes, en hauteurs d'image par seconde²
+
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function makeCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function loadPref(key, fallback) { try { const v = localStorage.getItem('storia.' + key); return v === null ? fallback : v; } catch (e) { return fallback; } }
+function savePref(key, value) { try { localStorage.setItem('storia.' + key, String(value)); } catch (e) { /* stockage indisponible */ } }
+
+/* =========================================================================
+   3. L'ILLUSTRATION PROVISOIRE, peinte en code.
+   Elle sera remplacée par une image générée par IA. On peint aussi une
+   « carte d'effets » : rouge = eau, vert = cascade, bleu = voiles.
+   ========================================================================= */
+const W = 1600, H = 1000;
+
+function polyPath(ctx, pts) {
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath();
+}
+// Rend un contour irrégulier (roche) sans toucher aux bords de l'image.
+function roughen(pts, rand, amp, steps) {
+  const onBorder = (p) => p[0] <= 0 || p[0] >= W || p[1] <= 0 || p[1] >= H;
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    out.push(a);
+    if (onBorder(a) && onBorder(b)) continue;
+    for (let s = 1; s < steps; s++) {
+      const t = s / steps;
+      out.push([a[0] + (b[0] - a[0]) * t + (rand() - 0.5) * amp, a[1] + (b[1] - a[1]) * t + (rand() - 0.5) * amp]);
+    }
+  }
+  return out;
+}
+function rockTexture(n, seed) {
+  const cv = makeCanvas(n, n), cx = cv.getContext('2d');
+  const img = cx.createImageData(n, n), d = img.data;
+  const rand = mulberry32(seed);
+  const octaves = [[6, 0.45], [12, 0.27], [24, 0.16], [48, 0.12]];
+  const grids = octaves.map(([g]) => {
+    const s = g + 1, a = new Float32Array(s * s);
+    for (let i = 0; i < a.length; i++) a[i] = rand();
+    for (let k = 0; k <= g; k++) { a[k * s + g] = a[k * s]; a[g * s + k] = a[k]; } // motif raccordable
+    return a;
+  });
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      let v = 0;
+      for (let o = 0; o < octaves.length; o++) {
+        const g = octaves[o][0], w = octaves[o][1], a = grids[o], s = g + 1;
+        const fx = (x / n) * g, fy = (y / n) * g, ix = Math.floor(fx), iy = Math.floor(fy);
+        let tx = fx - ix, ty = fy - iy;
+        tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
+        const v0 = a[iy * s + ix] * (1 - tx) + a[iy * s + ix + 1] * tx;
+        const v1 = a[(iy + 1) * s + ix] * (1 - tx) + a[(iy + 1) * s + ix + 1] * tx;
+        v += w * (v0 * (1 - ty) + v1 * ty);
+      }
+      const g8 = clamp((v - 0.5) * 2.2 * 255 + 128, 0, 255), i4 = (y * n + x) * 4;
+      d[i4] = d[i4 + 1] = d[i4 + 2] = g8; d[i4 + 3] = 255;
+    }
+  }
+  cx.putImageData(img, 0, 0);
+  return cv;
+}
+let rockScratch = null;
+function paintRock(ctx, pts, tex, light) {
+  rockScratch = rockScratch || makeCanvas(W, H);
+  const t = rockScratch.getContext('2d');
+  t.globalCompositeOperation = 'source-over';
+  t.clearRect(0, 0, W, H);
+  polyPath(t, pts); t.fillStyle = light.base; t.fill();
+  t.globalCompositeOperation = 'source-atop';
+  const g = t.createRadialGradient(light.x, light.y, 0, light.x, light.y, light.r);
+  g.addColorStop(0, light.lit); g.addColorStop(1, 'rgba(0,0,0,0)');
+  t.fillStyle = g; t.fillRect(0, 0, W, H);
+  t.globalCompositeOperation = 'overlay';
+  t.globalAlpha = 0.36;
+  t.fillStyle = t.createPattern(tex, 'repeat'); t.fillRect(0, 0, W, H);
+  t.globalAlpha = 1;
+  t.globalCompositeOperation = 'destination-in';
+  polyPath(t, pts); t.fillStyle = '#000'; t.fill();
+  t.globalCompositeOperation = 'source-over';
+  ctx.drawImage(rockScratch, 0, 0);
+}
+
+// --- Le bateau ---------------------------------------------------------------
+function shipHull(ctx) {
+  ctx.beginPath();
+  ctx.moveTo(552, 628);
+  ctx.quadraticCurveTo(600, 640, 668, 648);
+  ctx.lineTo(912, 650);
+  ctx.quadraticCurveTo(930, 626, 960, 618);
+  ctx.lineTo(1046, 606);
+  ctx.lineTo(1066, 604);
+  ctx.quadraticCurveTo(1068, 664, 1030, 700);
+  ctx.lineTo(642, 703);
+  ctx.quadraticCurveTo(588, 690, 552, 628);
+  ctx.closePath();
+}
+// [x haut gauche, x haut droite, y haut, x bas gauche, x bas droite, y bas, gonflement]
+const SAILS = [
+  [606, 756, 470, 614, 748, 574, 16],
+  [628, 734, 390, 634, 728, 462, 11],
+  [722, 910, 440, 732, 900, 592, 20],
+  [746, 886, 330, 752, 880, 432, 14],
+];
+function sailPath(ctx, s) {
+  const [xa, xb, ya, xc, xd, yb, bulge] = s;
+  ctx.beginPath();
+  ctx.moveTo(xa, ya);
+  ctx.quadraticCurveTo((xa + xb) / 2, ya - 6, xb, ya);
+  ctx.quadraticCurveTo(xb + bulge * 0.6, (ya + yb) / 2, xd, yb);
+  ctx.quadraticCurveTo((xc + xd) / 2, yb + bulge, xc, yb);
+  ctx.quadraticCurveTo(xa - bulge * 0.6, (ya + yb) / 2, xa, ya);
+  ctx.closePath();
+}
+function mizzenPath(ctx) {
+  ctx.beginPath();
+  ctx.moveTo(1004, 384);
+  ctx.quadraticCurveTo(1046, 470, 1046, 568);
+  ctx.quadraticCurveTo(992, 578, 940, 566);
+  ctx.quadraticCurveTo(978, 470, 1004, 384);
+  ctx.closePath();
+}
+function flagPath(ctx) {
+  ctx.beginPath();
+  ctx.moveTo(817, 246);
+  ctx.quadraticCurveTo(842, 238, 868, 248);
+  ctx.lineTo(866, 276);
+  ctx.quadraticCurveTo(842, 268, 817, 276);
+  ctx.closePath();
+}
+function drawShip(ctx) {
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#24170e'; ctx.lineWidth = 6; // beaupré
+  ctx.beginPath(); ctx.moveTo(566, 634); ctx.lineTo(470, 586); ctx.stroke();
+  const mast = (x, top, bottom, w) => {
+    ctx.lineWidth = w; ctx.strokeStyle = '#2a1b11';
+    ctx.beginPath(); ctx.moveTo(x, bottom); ctx.lineTo(x, top); ctx.stroke();
+    ctx.lineWidth = Math.max(1.5, w * 0.25); ctx.strokeStyle = 'rgba(160,120,80,0.35)';
+    ctx.beginPath(); ctx.moveTo(x + w * 0.22, bottom); ctx.lineTo(x + w * 0.22, top); ctx.stroke();
+  };
+  mast(681, 352, 650, 9); mast(816, 240, 652, 11); mast(975, 372, 616, 8);
+  ctx.strokeStyle = 'rgba(30,22,16,0.75)'; ctx.lineWidth = 1.4; // gréement
+  [[816, 262, 552, 628], [816, 262, 1066, 606], [681, 360, 470, 586], [975, 380, 1066, 606], [681, 360, 816, 300], [816, 300, 975, 390]]
+    .forEach(([a, b, c2, d]) => { ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c2, d); ctx.stroke(); });
+  ctx.strokeStyle = '#2a1b11'; ctx.lineWidth = 5; // vergues
+  SAILS.forEach((s) => { ctx.beginPath(); ctx.moveTo(s[0] - 10, s[2]); ctx.lineTo(s[1] + 10, s[2]); ctx.stroke(); });
+  SAILS.forEach((s, i) => {
+    sailPath(ctx, s);
+    const g = ctx.createLinearGradient(s[0], s[2], s[1], s[5]);
+    g.addColorStop(0, '#cdbf9f'); g.addColorStop(0.55, '#e7dcc0'); g.addColorStop(1, '#f3ead3');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.save(); ctx.clip();
+    const sh = ctx.createLinearGradient(s[0], 0, s[1], 0);
+    sh.addColorStop(0, 'rgba(60,45,30,0.35)'); sh.addColorStop(0.5, 'rgba(60,45,30,0)');
+    ctx.fillStyle = sh; ctx.fillRect(s[0] - 20, s[2] - 10, s[1] - s[0] + 40, s[5] - s[2] + 40);
+    ctx.strokeStyle = 'rgba(120,100,70,0.35)'; ctx.lineWidth = 1; // coutures
+    for (let k = 1; k < 4; k++) {
+      const x = s[0] + ((s[1] - s[0]) * k) / 4;
+      ctx.beginPath(); ctx.moveTo(x, s[2]); ctx.quadraticCurveTo(x + 2, (s[2] + s[5]) / 2 + s[6] * 0.5, x, s[5] + s[6] * 0.6); ctx.stroke();
+    }
+    if (i === 2) { // pièce rapiécée
+      ctx.fillStyle = 'rgba(150,125,90,0.55)'; ctx.fillRect(842, 500, 34, 28);
+      ctx.strokeStyle = 'rgba(90,70,45,0.6)'; ctx.setLineDash([3, 3]); ctx.strokeRect(842, 500, 34, 28); ctx.setLineDash([]);
+    }
+    ctx.restore();
+  });
+  mizzenPath(ctx);
+  const mg = ctx.createLinearGradient(940, 384, 1046, 570);
+  mg.addColorStop(0, '#d8cbaa'); mg.addColorStop(1, '#efe4ca');
+  ctx.fillStyle = mg; ctx.fill();
+  ctx.strokeStyle = '#2a1b11'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(1010, 372); ctx.lineTo(932, 574); ctx.stroke();
+  flagPath(ctx); ctx.fillStyle = '#15110f'; ctx.fill(); // pavillon
+  ctx.fillStyle = '#efe6d0'; ctx.beginPath(); ctx.arc(842, 257, 5.2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(839, 261, 6, 4);
+  ctx.fillStyle = '#15110f'; ctx.beginPath(); ctx.arc(840, 257, 1.3, 0, Math.PI * 2); ctx.arc(844.4, 257, 1.3, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#efe6d0'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(834, 268); ctx.lineTo(850, 274); ctx.moveTo(850, 268); ctx.lineTo(834, 274); ctx.stroke();
+  shipHull(ctx); // coque
+  const hg = ctx.createLinearGradient(0, 604, 0, 704);
+  hg.addColorStop(0, '#6a4426'); hg.addColorStop(0.35, '#4a2f1b'); hg.addColorStop(1, '#22150c');
+  ctx.fillStyle = hg; ctx.fill();
+  ctx.save(); shipHull(ctx); ctx.clip();
+  ctx.strokeStyle = 'rgba(20,12,6,0.55)'; ctx.lineWidth = 1.5; // bordages
+  for (let k = 0; k < 4; k++) {
+    const y = 664 + k * 10;
+    ctx.beginPath(); ctx.moveTo(540, y - 10 + k * 2); ctx.quadraticCurveTo(800, y + 4, 1070, y - 22 + k * 3); ctx.stroke();
+  }
+  ctx.strokeStyle = '#b98a3e'; ctx.lineWidth = 3; // liston doré
+  ctx.beginPath(); ctx.moveTo(556, 636); ctx.quadraticCurveTo(604, 648, 668, 655); ctx.lineTo(912, 657); ctx.quadraticCurveTo(932, 634, 962, 626); ctx.lineTo(1066, 613); ctx.stroke();
+  ctx.fillStyle = '#140c07'; // sabords
+  for (let x = 700; x <= 900; x += 40) { ctx.beginPath(); ctx.arc(x, 671, 4.5, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = '#1a110a'; [1000, 1022, 1044].forEach((x) => ctx.fillRect(x, 622, 13, 14));
+  ctx.restore();
+  const lantern = (x, y) => { // lanternes éteintes : le shader les allumera
+    ctx.fillStyle = '#2b1d12'; ctx.fillRect(x - 6, y - 9, 12, 16);
+    ctx.fillStyle = 'rgba(255,214,150,0.25)'; ctx.fillRect(x - 4, y - 6, 8, 10);
+    ctx.fillStyle = '#2b1d12'; ctx.beginPath(); ctx.moveTo(x - 7, y - 9); ctx.lineTo(x, y - 15); ctx.lineTo(x + 7, y - 9); ctx.closePath(); ctx.fill();
+  };
+  lantern(1062, 592);
+  ctx.strokeStyle = 'rgba(30,22,16,0.8)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(500, 601); ctx.lineTo(500, 612); ctx.stroke();
+  lantern(500, 622);
+  ctx.restore();
+}
+function drawChest(c, x, y) {
+  c.save();
+  const gl = c.createRadialGradient(x + 42, y - 4, 2, x + 42, y - 4, 70);
+  gl.addColorStop(0, 'rgba(255,200,90,0.5)'); gl.addColorStop(1, 'rgba(255,200,90,0)');
+  c.fillStyle = gl; c.fillRect(x - 40, y - 70, 170, 140);
+  c.fillStyle = '#4a2a13'; // couvercle entrouvert
+  c.beginPath(); c.moveTo(x - 2, y - 2); c.lineTo(x + 86, y - 2); c.lineTo(x + 80, y - 30); c.quadraticCurveTo(x + 42, y - 44, x + 4, y - 30); c.closePath(); c.fill();
+  c.fillStyle = '#f2c14e'; c.beginPath(); c.ellipse(x + 42, y + 2, 38, 8, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#ffe08a';
+  for (let i = 0; i < 9; i++) { c.beginPath(); c.ellipse(x + 12 + i * 7.5, y - 1 + (i % 2) * 3, 3.5, 2, 0, 0, Math.PI * 2); c.fill(); }
+  const bg = c.createLinearGradient(0, y, 0, y + 46);
+  bg.addColorStop(0, '#6b3d1b'); bg.addColorStop(1, '#3a200e');
+  c.fillStyle = bg; c.fillRect(x, y + 4, 84, 42);
+  c.fillStyle = '#c9963f'; c.fillRect(x + 14, y + 4, 7, 42); c.fillRect(x + 63, y + 4, 7, 42); c.fillRect(x, y + 4, 84, 4);
+  c.fillStyle = '#e2b457'; c.fillRect(x + 37, y + 14, 10, 12);
+  c.restore();
+}
+// Flou rapide (boîte, deux passes) pour adoucir les bords de la carte d'effets.
+function blurCanvas(cv, radius) {
+  const cx = cv.getContext('2d'), w = cv.width, h = cv.height;
+  const img = cx.getImageData(0, 0, w, h), d = img.data, tmp = new Float32Array(w * h * 3), n = 2 * radius + 1;
+  for (let pass = 0; pass < 2; pass++) {
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      for (let ch = 0; ch < 3; ch++) {
+        let acc = 0;
+        for (let x = -radius; x <= radius; x++) acc += d[(row + clamp(x, 0, w - 1)) * 4 + ch];
+        for (let x = 0; x < w; x++) {
+          tmp[(row + x) * 3 + ch] = acc / n;
+          acc += d[(row + Math.min(w - 1, x + radius + 1)) * 4 + ch] - d[(row + Math.max(0, x - radius)) * 4 + ch];
+        }
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      for (let ch = 0; ch < 3; ch++) {
+        let acc = 0;
+        for (let y = -radius; y <= radius; y++) acc += tmp[(clamp(y, 0, h - 1) * w + x) * 3 + ch];
+        for (let y = 0; y < h; y++) {
+          d[(y * w + x) * 4 + ch] = acc / n;
+          acc += tmp[(Math.min(h - 1, y + radius + 1) * w + x) * 3 + ch] - tmp[(Math.max(0, y - radius) * w + x) * 3 + ch];
+        }
+      }
+    }
+  }
+  cx.putImageData(img, 0, 0);
+}
+
+function paintStandIn() {
+  const img = makeCanvas(W, H), c = img.getContext('2d');
+  const rand = mulberry32(20261001);
+  const tex = rockTexture(256, 7);
+
+  // Paroi du fond
+  c.fillStyle = '#070c18'; c.fillRect(0, 0, W, H);
+  paintRock(c, [[0, 0], [W, 0], [W, 566], [0, 566]], tex, { x: 1030, y: 330, r: 760, base: '#0a1122', lit: 'rgba(58,82,128,0.75)' });
+
+  // Ouverture sur la mer : ciel, lune, mer au loin
+  const mouth = roughen([[792, 566], [780, 470], [788, 372], [810, 286], [848, 214], [904, 160], [974, 128], [1048, 120], [1122, 138], [1186, 184], [1232, 250], [1258, 338], [1268, 440], [1272, 566]], rand, 14, 3);
+  c.save(); polyPath(c, mouth); c.clip();
+  const sky = c.createLinearGradient(0, 110, 0, 476);
+  sky.addColorStop(0, '#0b1631'); sky.addColorStop(0.6, '#1f3666'); sky.addColorStop(1, '#3c5d95');
+  c.fillStyle = sky; c.fillRect(760, 100, 540, 470);
+  for (let i = 0; i < 110; i++) {
+    const x = 780 + rand() * 500, y = 120 + rand() * 330, r = rand() * 1.2 + 0.35;
+    c.fillStyle = `rgba(232,238,255,${(0.3 + rand() * 0.65).toFixed(2)})`;
+    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+  }
+  const mx = 1090, my = 232;
+  const halo = c.createRadialGradient(mx, my, 20, mx, my, 280);
+  halo.addColorStop(0, 'rgba(225,236,255,0.6)'); halo.addColorStop(0.3, 'rgba(160,190,240,0.2)'); halo.addColorStop(1, 'rgba(120,150,220,0)');
+  c.fillStyle = halo; c.fillRect(760, 0, 560, 570);
+  c.fillStyle = '#f5f1e4'; c.beginPath(); c.arc(mx, my, 34, 0, Math.PI * 2); c.fill();
+  c.fillStyle = 'rgba(190,186,170,0.45)';
+  [[-10, -8, 7], [9, 6, 9], [-6, 13, 5], [14, -12, 4]].forEach(([dx, dy, r]) => { c.beginPath(); c.arc(mx + dx, my + dy, r, 0, Math.PI * 2); c.fill(); });
+  const sea = c.createLinearGradient(0, 476, 0, 566);
+  sea.addColorStop(0, '#22406e'); sea.addColorStop(1, '#152c50');
+  c.fillStyle = sea; c.fillRect(760, 476, 540, 92);
+  for (let i = 0; i < 90; i++) {
+    const y = 478 + rand() * 88, k = (y - 476) / 90, w = (6 + rand() * 24) * (1 + k * 1.5), x = mx + (rand() - 0.5) * (26 + k * 120);
+    c.fillStyle = `rgba(228,236,255,${(0.25 + rand() * 0.55).toFixed(2)})`;
+    c.fillRect(x - w / 2, y, w, 1 + rand() * 1.4);
+  }
+  c.restore();
+  c.save(); // liseré de lune sur le bord de l'ouverture
+  c.shadowColor = 'rgba(150,185,240,0.55)'; c.shadowBlur = 16;
+  c.strokeStyle = 'rgba(150,185,240,0.32)'; c.lineWidth = 4;
+  polyPath(c, mouth); c.stroke();
+  c.restore();
+
+  // Eau de la grotte
+  const water = c.createLinearGradient(0, 566, 0, H);
+  water.addColorStop(0, '#1d3a5e'); water.addColorStop(0.15, '#122a45'); water.addColorStop(0.5, '#08192a'); water.addColorStop(1, '#020a12');
+  c.fillStyle = water; c.fillRect(0, 566, W, H - 566);
+
+  // Le bateau, dessiné à part pour son reflet
+  const ship = makeCanvas(W, H);
+  drawShip(ship.getContext('2d'));
+  const refl = makeCanvas(W, H), rc = refl.getContext('2d');
+  rc.save(); rc.translate(0, 2 * 704); rc.scale(1, -1); rc.drawImage(ship, 0, 0); rc.restore();
+  rc.globalCompositeOperation = 'destination-in';
+  const fade = rc.createLinearGradient(0, 704, 0, 960);
+  fade.addColorStop(0, 'rgba(0,0,0,0.55)'); fade.addColorStop(1, 'rgba(0,0,0,0)');
+  rc.fillStyle = fade; rc.fillRect(0, 704, W, H - 704);
+  c.save(); c.filter = 'blur(1.5px)'; c.drawImage(refl, 0, 0); c.restore();
+
+  // Chemin de lune et rides sur l'eau
+  for (let i = 0; i < 520; i++) {
+    const t = rand(), y = 568 + Math.pow(t, 1.25) * (H - 570), k = (y - 566) / (H - 566);
+    const spread = 50 + k * 320, x = 1070 - k * 120 + (rand() - 0.5) * spread * (0.5 + rand());
+    const w = (8 + rand() * 42) * (0.6 + k * 2.4), a = (0.5 - k * 0.38) * (0.3 + rand() * 0.8);
+    c.fillStyle = `rgba(205,222,255,${a.toFixed(3)})`;
+    c.fillRect(x - w / 2, y, w, 1 + k * 2.4 * rand());
+  }
+  for (let i = 0; i < 200; i++) {
+    const y = 570 + rand() * (H - 575), k = (y - 566) / (H - 566), w = 20 + rand() * 170 * (0.5 + k), x = rand() * W;
+    c.fillStyle = `rgba(120,165,215,${((0.04 + rand() * 0.06) * (1 - k * 0.5)).toFixed(3)})`;
+    c.fillRect(x, y, w, 1 + k * 1.6);
+  }
+  c.drawImage(ship, 0, 0);
+
+  // Parois latérales
+  const leftWall = roughen([[0, 0], [430, 0], [452, 96], [498, 192], [538, 300], [566, 420], [600, 566], [470, 616], [330, 670], [180, 736], [0, 812]], rand, 22, 4);
+  const rightWall = roughen([[W, 0], [1322, 0], [1300, 120], [1314, 250], [1302, 380], [1290, 566], [1380, 612], [1480, 662], [W, 708]], rand, 22, 4);
+  paintRock(c, leftWall, tex, { x: 640, y: 420, r: 620, base: '#070c19', lit: 'rgba(44,64,104,0.7)' });
+  paintRock(c, rightWall, tex, { x: 1200, y: 330, r: 520, base: '#070c19', lit: 'rgba(50,72,118,0.7)' });
+
+  // Cascade
+  const fall = [[350, 118], [370, 118], [384, 400], [392, 664], [334, 664], [344, 400]];
+  const fg = c.createLinearGradient(0, 118, 0, 664);
+  fg.addColorStop(0, 'rgba(150,185,225,0.55)'); fg.addColorStop(0.5, 'rgba(185,212,240,0.7)'); fg.addColorStop(1, 'rgba(220,235,250,0.85)');
+  polyPath(c, fall); c.fillStyle = fg; c.fill();
+  c.save(); polyPath(c, fall); c.clip();
+  c.strokeStyle = 'rgba(240,248,255,0.5)'; c.lineWidth = 1.5;
+  for (let i = 0; i < 22; i++) { const x = 334 + rand() * 58; c.beginPath(); c.moveTo(x - 6, 118); c.lineTo(x + rand() * 6, 664); c.stroke(); }
+  c.restore();
+  c.fillStyle = '#04070f'; c.beginPath(); c.ellipse(360, 116, 20, 6, 0, 0, Math.PI * 2); c.fill();
+  for (let i = 0; i < 26; i++) {
+    c.fillStyle = `rgba(225,238,252,${(0.12 + rand() * 0.25).toFixed(2)})`;
+    c.beginPath(); c.ellipse(362 + (rand() - 0.5) * 110, 664 + rand() * 18, 10 + rand() * 26, 3 + rand() * 6, 0, 0, Math.PI * 2); c.fill();
+  }
+
+  // Plafond et stalactites
+  const ceiling = roughen([[0, 0], [W, 0], [W, 64], [1540, 80], [1470, 92], [1422, 100], [1405, 246], [1390, 102], [1340, 96], [1290, 84], [1230, 72], [1166, 64], [1150, 176], [1135, 66], [1080, 56], [1020, 54], [960, 58], [900, 68], [850, 80], [792, 90], [772, 94], [760, 150], [748, 96], [700, 104], [620, 108], [560, 110], [505, 104], [482, 100], [470, 226], [458, 100], [420, 94], [360, 88], [300, 80], [272, 78], [262, 200], [250, 80], [200, 70], [120, 56], [0, 40]], rand, 6, 2);
+  paintRock(c, ceiling, tex, { x: 1040, y: 160, r: 700, base: '#060a16', lit: 'rgba(46,66,108,0.85)' });
+
+  // Vers luisants au plafond et sur les parois
+  const glow = [];
+  for (let i = 0; i < 140; i++) {
+    let x, y;
+    if (i < 80) { x = rand() * W; y = 8 + rand() * 44; }
+    else if (i < 112) { x = rand() * 300; y = 130 + rand() * 360; }
+    else { x = 1336 + rand() * 260; y = 120 + rand() * 340; }
+    glow.push([x, y]);
+    const r = 5 + rand() * 6, a = 0.35 + rand() * 0.5;
+    const g = c.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(140,255,236,${a.toFixed(2)})`); g.addColorStop(1, 'rgba(140,255,236,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+    c.fillStyle = `rgba(210,255,248,${Math.min(1, a + 0.3).toFixed(2)})`;
+    c.beginPath(); c.arc(x, y, 1.1, 0, Math.PI * 2); c.fill();
+  }
+  // Algues lumineuses au ras de l'eau
+  for (let i = 0; i < 44; i++) {
+    const side = i % 2, t = rand();
+    const x = side ? 1290 + t * 300 : 600 - t * 590;
+    const y = (side ? 566 + t * 142 : 566 + t * 246) - 4 - rand() * 12;
+    const r = 3 + rand() * 5;
+    const g = c.createRadialGradient(x, y, 0, x, y, r * 2.4);
+    g.addColorStop(0, 'rgba(120,250,225,0.55)'); g.addColorStop(1, 'rgba(120,250,225,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(x, y, r * 2.4, 0, Math.PI * 2); c.fill();
+  }
+
+  // Rochers du premier plan et coffre
+  const leftRock = roughen([[0, 812], [90, 798], [172, 816], [250, 852], [318, 906], [356, 962], [372, H], [0, H]], rand, 18, 3);
+  const rightRock = roughen([[W, 708], [W, H], [1252, H], [1272, 952], [1318, 900], [1382, 858], [1460, 830], [1540, 812]], rand, 18, 3);
+  paintRock(c, leftRock, tex, { x: 300, y: 820, r: 420, base: '#05090f', lit: 'rgba(36,52,84,0.8)' });
+  paintRock(c, rightRock, tex, { x: 1300, y: 860, r: 420, base: '#05090f', lit: 'rgba(36,52,84,0.8)' });
+  drawChest(c, 1420, 800);
+
+  // Grain pictural
+  const grain = makeCanvas(256, 256), gc = grain.getContext('2d'), gd = gc.createImageData(256, 256);
+  for (let i = 0; i < gd.data.length; i += 4) { const v = 128 + (rand() - 0.5) * 70; gd.data[i] = gd.data[i + 1] = gd.data[i + 2] = v; gd.data[i + 3] = 255; }
+  gc.putImageData(gd, 0, 0);
+  c.save(); c.globalCompositeOperation = 'overlay'; c.globalAlpha = 0.12; c.fillStyle = c.createPattern(grain, 'repeat'); c.fillRect(0, 0, W, H); c.restore();
+
+  // Carte d'effets (demi-résolution) : rouge = eau, vert = cascade, bleu = voiles
+  const fx = makeCanvas(W / 2, H / 2), f = fx.getContext('2d');
+  f.scale(0.5, 0.5);
+  f.fillStyle = '#000'; f.fillRect(0, 0, W, H);
+  f.fillStyle = '#f00'; f.fillRect(0, 568, W, H - 568);
+  f.fillStyle = '#000';
+  [leftWall, rightWall, leftRock, rightRock].forEach((p) => { polyPath(f, p); f.fill(); });
+  shipHull(f); f.fill();
+  f.fillRect(1410, 760, 104, 90);
+  f.globalCompositeOperation = 'lighter';
+  f.fillStyle = '#0f0'; polyPath(f, fall); f.fill();
+  f.beginPath(); f.ellipse(362, 668, 60, 14, 0, 0, Math.PI * 2); f.fill();
+  f.fillStyle = '#00f';
+  SAILS.forEach((s) => { sailPath(f, s); f.fill(); });
+  mizzenPath(f); f.fill(); flagPath(f); f.fill();
+  blurCanvas(fx, 2);
+
+  return {
+    image: img,
+    fx,
+    w: W,
+    h: H,
+    meta: {
+      moon: [mx / W, my / H],
+      ship: [0.5, 0.5],
+      lanterns: [[1062 / W, 592 / H], [500 / W, 622 / H]],
+      drips: [{ from: [470 / W, 226 / H], to: 0.78 }, { from: [1405 / W, 246 / H], to: 0.74 }, { from: [262 / W, 200 / H], to: 0.8 }],
+      fallBase: [362 / W, 664 / H],
+      chest: [1462 / W, 798 / H],
+      glow: glow.map(([x, y]) => [x / W, y / H]),
+      focus: [0.49, 0.5],
+    },
+  };
+}
+
+// Pour une image déposée : effets réglés par la seule hauteur de l'eau.
+function customMeta(waterline) {
+  return {
+    moon: [0.7, 0.2],
+    ship: [0.5, waterline - 0.1],
+    lanterns: [[0.6, waterline - 0.06], [-1, -1]],
+    drips: [{ from: [0.3, 0.08], to: Math.min(0.95, waterline + 0.16) }, { from: [0.76, 0.1], to: Math.min(0.95, waterline + 0.1) }],
+    fallBase: null,
+    chest: null,
+    glow: [],
+    focus: [0.5, 0.5],
+  };
+}
+function customFx(waterline, aspect) {
+  const w = 512, h = Math.max(8, Math.round(512 / aspect));
+  const cv = makeCanvas(w, h), f = cv.getContext('2d');
+  f.fillStyle = '#000'; f.fillRect(0, 0, w, h);
+  const y0 = waterline * h;
+  const g = f.createLinearGradient(0, y0 - 6, 0, y0 + 10);
+  g.addColorStop(0, 'rgba(255,0,0,0)'); g.addColorStop(1, 'rgba(255,0,0,1)');
+  f.fillStyle = g; f.fillRect(0, y0 - 6, w, h - y0 + 6);
+  return cv;
+}
+
+/* =========================================================================
+   4. RENDU WEBGL : l'image et ses effets (eau, cascade, voiles, lumières)
+   ========================================================================= */
+const VERT = `
+attribute vec2 a_pos;
+varying vec2 v_pos;
+void main() {
+  v_pos = vec2(a_pos.x * 0.5 + 0.5, 0.5 - a_pos.y * 0.5);
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}`;
+const FRAG = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec2 v_pos;
+uniform sampler2D u_img;
+uniform sampler2D u_fx;
+uniform vec2 u_span;
+uniform vec2 u_center;
+uniform float u_time;
+uniform float u_reveal;
+uniform float u_spot;
+uniform float u_swell;
+uniform float u_lantern;
+uniform float u_motion;
+uniform vec2 u_ship;
+uniform vec2 u_moon;
+uniform vec2 u_lant0;
+uniform vec2 u_lant1;
+uniform float u_aspect;
+uniform vec3 u_bg;
+
+float hash(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+void main() {
+  vec2 uv = (v_pos - 0.5) * u_span + u_center;
+  vec2 e = min(uv, 1.0 - uv);
+  float inside = smoothstep(0.0, 0.035, min(e.x, e.y));
+  vec2 cuv = clamp(uv, 0.001, 0.999);
+  vec3 fx = texture2D(u_fx, cuv).rgb;
+  float water = fx.r;
+  float fall = fx.g;
+  float cloth = fx.b;
+  float t = u_time;
+
+  // Déformations : eau (plus forte au premier plan), voiles, cascade
+  float near = smoothstep(0.56, 1.0, cuv.y);
+  float amp = mix(0.0008, 0.0032, near) * (1.0 + 0.9 * u_swell) * u_motion;
+  vec2 d = vec2(0.0);
+  d.x += water * amp * (sin(cuv.y * 160.0 - t * 1.6 + sin(cuv.x * 7.0 + t * 0.35) * 2.0) + 0.55 * sin(cuv.y * 70.0 + cuv.x * 18.0 - t * 1.05));
+  d.y += water * amp * 0.45 * sin(cuv.x * 95.0 + cuv.y * 35.0 + t * 1.25);
+  d.x += cloth * 0.0015 * u_motion * sin(cuv.y * 52.0 + t * 2.3 + cuv.x * 12.0);
+  d.y += cloth * 0.0008 * u_motion * sin(cuv.x * 36.0 + t * 1.8);
+  d.x += fall * 0.0009 * u_motion * sin(cuv.y * 120.0 - t * 10.0);
+  vec3 col = texture2D(u_img, clamp(cuv + d, 0.001, 0.999)).rgb;
+
+  // Cascade : filets d'eau qui défilent
+  float s1 = noise(vec2(cuv.x * 260.0, cuv.y * 10.0 - t * 3.4));
+  float s2 = noise(vec2(cuv.x * 110.0 + 7.0, cuv.y * 5.0 - t * 2.2));
+  col += fall * vec3(0.78, 0.9, 1.0) * smoothstep(0.45, 0.95, s1 * s2 * 1.6) * 0.6;
+
+  // Scintillements sur l'eau, surtout dans le chemin de lune
+  float path = exp(-pow((cuv.x - u_moon.x + (cuv.y - 0.56) * 0.12) * 6.0, 2.0));
+  float g = noise(vec2(cuv.x * 85.0 + sin(t * 0.25) * 3.0, cuv.y * 430.0 - t * 0.7));
+  float glint = smoothstep(0.84, 0.98, g) * (0.05 + path * 1.1) * (0.5 + near);
+  col += water * vec3(0.7, 0.82, 1.0) * glint * (0.55 + 0.6 * u_swell);
+
+  // Lumière : grotte dans la pénombre, puis le bateau sort de l'ombre
+  vec2 sp = (cuv - u_ship) * vec2(3.2, 3.4);
+  float shipZone = exp(-dot(sp, sp));
+  float light = u_reveal * (1.0 - 0.8 * shipZone * (1.0 - u_spot)) + 0.36 * shipZone * u_spot * u_reveal;
+  col *= light;
+
+  // Rayons de lune qui descendent de l'ouverture
+  vec2 rv = cuv - u_moon;
+  rv.x *= u_aspect;
+  float ang = atan(rv.y, rv.x);
+  float dist = length(rv);
+  float rays = noise(vec2(ang * 22.0, t * 0.12)) * noise(vec2(ang * 9.0 + 3.0, -t * 0.08));
+  float beam = exp(-pow((ang - 2.15) / 0.5, 2.0));
+  col += vec3(0.55, 0.68, 0.95) * rays * beam * smoothstep(1.1, 0.05, dist) * 0.18 * u_reveal * (0.5 + 0.7 * u_spot);
+
+  // Lanternes
+  float flick = 0.82 + 0.18 * noise(vec2(u_time * 7.0, 1.3));
+  vec2 l0 = (cuv - u_lant0) * vec2(u_aspect, 1.0);
+  vec2 l1 = (cuv - u_lant1) * vec2(u_aspect, 1.0);
+  float halo = 0.0018 / (dot(l0, l0) + 0.0012) + 0.001 / (dot(l1, l1) + 0.001);
+  float warm = exp(-dot(l0, l0) * 40.0) + exp(-dot(l1, l1) * 60.0) * 0.6;
+  col += vec3(1.0, 0.62, 0.28) * u_lantern * flick * (halo * 0.07 + warm * 0.5);
+
+  vec2 vv = v_pos - 0.5;
+  col *= 1.0 - dot(vv, vv) * 0.85;
+  gl_FragColor = vec4(mix(u_bg, col, inside), 1.0);
+}`;
+
+const UNIFORMS = ['u_img', 'u_fx', 'u_span', 'u_center', 'u_time', 'u_reveal', 'u_spot', 'u_swell', 'u_lantern', 'u_motion', 'u_ship', 'u_moon', 'u_lant0', 'u_lant1', 'u_aspect', 'u_bg'];
+
+class Renderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    const opts = { antialias: false, alpha: false, premultipliedAlpha: false, preserveDrawingBuffer: false };
+    const gl = canvas.getContext('webgl', opts) || canvas.getContext('experimental-webgl', opts);
+    if (!gl) throw new Error('WebGL indisponible');
+    this.gl = gl;
+    const prog = gl.createProgram();
+    [[gl.VERTEX_SHADER, VERT], [gl.FRAGMENT_SHADER, FRAG]].forEach(([type, src]) => {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src); gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh) || 'shader');
+      gl.attachShader(prog, sh);
+    });
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) || 'link');
+    gl.useProgram(prog);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, 'a_pos');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    this.u = {};
+    UNIFORMS.forEach((n) => { this.u[n] = gl.getUniformLocation(prog, n); });
+    this.texImg = this.texture();
+    this.texFx = this.texture();
+    gl.uniform1i(this.u.u_img, 0);
+    gl.uniform1i(this.u.u_fx, 1);
+  }
+  texture() {
+    const gl = this.gl, t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+  upload(tex, unit, source) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, source);
+  }
+  setScene(scene) { this.upload(this.texImg, 0, scene.image); this.upload(this.texFx, 1, scene.fx); }
+  resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+    const w = Math.max(1, Math.round(innerWidth * dpr)), h = Math.max(1, Math.round(innerHeight * dpr));
+    if (this.canvas.width !== w || this.canvas.height !== h) { this.canvas.width = w; this.canvas.height = h; }
+    this.gl.viewport(0, 0, w, h);
+  }
+  draw(view, st, scene, time) {
+    const gl = this.gl, u = this.u, m = scene.meta;
+    gl.uniform2f(u.u_span, view.span[0], view.span[1]);
+    gl.uniform2f(u.u_center, view.center[0], view.center[1]);
+    gl.uniform1f(u.u_time, time % 1000);
+    gl.uniform1f(u.u_reveal, st.reveal);
+    gl.uniform1f(u.u_spot, st.spot);
+    gl.uniform1f(u.u_swell, st.swell);
+    gl.uniform1f(u.u_lantern, st.lantern);
+    gl.uniform1f(u.u_motion, reducedMotion ? 0.45 : 1);
+    gl.uniform2f(u.u_ship, m.ship[0], m.ship[1]);
+    gl.uniform2f(u.u_moon, m.moon[0], m.moon[1]);
+    gl.uniform2f(u.u_lant0, m.lanterns[0][0], m.lanterns[0][1]);
+    gl.uniform2f(u.u_lant1, m.lanterns[1][0], m.lanterns[1][1]);
+    gl.uniform1f(u.u_aspect, scene.w / scene.h);
+    gl.uniform3f(u.u_bg, 6 / 255, 10 / 255, 20 / 255);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+}
+
+// Repli sans WebGL : l'image seule, assombrie selon la lumière.
+class FlatRenderer {
+  constructor(canvas) { this.canvas = canvas; this.c = canvas.getContext('2d'); }
+  setScene(scene) { this.scene = scene; }
+  resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+    const w = Math.max(1, Math.round(innerWidth * dpr)), h = Math.max(1, Math.round(innerHeight * dpr));
+    if (this.canvas.width !== w || this.canvas.height !== h) { this.canvas.width = w; this.canvas.height = h; }
+  }
+  draw(view, st, scene) {
+    const c = this.c, cw = this.canvas.width, ch = this.canvas.height;
+    c.fillStyle = '#060a14'; c.fillRect(0, 0, cw, ch);
+    const sx = (view.center[0] - view.span[0] / 2) * scene.w, sy = (view.center[1] - view.span[1] / 2) * scene.h;
+    c.drawImage(scene.image, sx, sy, view.span[0] * scene.w, view.span[1] * scene.h, 0, 0, cw, ch);
+    c.fillStyle = `rgba(6,10,20,${(1 - clamp(st.reveal, 0, 1)).toFixed(3)})`; c.fillRect(0, 0, cw, ch);
+  }
+}
+
+// Cadrage : « cover » en paysage ; en portrait on garde au moins 58 % de la largeur (bandes sombres en haut et en bas).
+function computeView(vw, vh, iw, ih, zoom, focus) {
+  const va = vw / vh, ia = iw / ih;
+  let sw, sh;
+  if (va > ia) { sw = 1; sh = ia / va; } else { sh = 1; sw = va / ia; }
+  const minW = 0.58;
+  if (sw < minW) { sh *= minW / sw; sw = minW; }
+  sw /= zoom; sh /= zoom;
+  const cx = sw >= 1 ? 0.5 : clamp(focus[0], sw / 2, 1 - sw / 2);
+  const cy = sh >= 1 ? 0.5 : clamp(focus[1], sh / 2, 1 - sh / 2);
+  return { span: [sw, sh], center: [cx, cy] };
+}
+
+/* =========================================================================
+   5. PARTICULES : gouttes, brume de la cascade, poussière de lune, vers luisants
+   ========================================================================= */
+function sprite(r, g, b, size = 64) {
+  const cv = makeCanvas(size, size), c = cv.getContext('2d');
+  const grad = c.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, `rgba(${r},${g},${b},1)`); grad.addColorStop(0.35, `rgba(${r},${g},${b},0.45)`); grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+  c.fillStyle = grad; c.fillRect(0, 0, size, size);
+  return cv;
+}
+
+class Sparks {
+  constructor(canvas) {
+    this.cv = canvas;
+    this.c = canvas.getContext('2d');
+    this.white = sprite(235, 245, 255);
+    this.cyan = sprite(150, 255, 235);
+    this.gold = sprite(255, 214, 120);
+    this.drops = []; this.rings = []; this.mist = []; this.motes = []; this.twinkle = [];
+    this.mistAcc = 0;
+  }
+  resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.round(innerWidth * dpr)), h = Math.max(1, Math.round(innerHeight * dpr));
+    if (this.cv.width !== w || this.cv.height !== h) { this.cv.width = w; this.cv.height = h; }
+  }
+  setMeta(meta) {
+    this.meta = meta;
+    this.drops = []; this.rings = []; this.mist = [];
+    this.motes = Array.from({ length: 46 }, () => ({ t: Math.random(), off: Math.random() - 0.5, ph: Math.random() * 6.28, sp: 0.004 + Math.random() * 0.01 }));
+    this.twinkle = (meta.glow || []).filter((_, i) => i % 4 === 0).map((p) => ({ p, ph: Math.random() * 6.28, sp: 0.6 + Math.random() * 1.4 }));
+  }
+  // Lance une goutte et renvoie son temps de chute (le son est joué à l'impact).
+  drip(index) {
+    const list = this.meta.drips;
+    if (!list.length) return 0.8;
+    const d = list[index % list.length];
+    const fallTime = Math.sqrt((2 * Math.max(0.05, d.to - d.from[1])) / G);
+    this.drops.push({ x: d.from[0], y0: d.from[1], to: d.to, age: 0, fallTime });
+    return fallTime;
+  }
+  update(dt) {
+    for (const d of this.drops) {
+      d.age += dt;
+      if (!d.done && d.age >= d.fallTime) {
+        d.done = true;
+        this.rings.push({ x: d.x, y: d.to, age: 0 });
+        for (let k = 0; k < 4; k++) this.rings.push({ x: d.x, y: d.to, age: 0, splash: true, vx: (Math.random() - 0.5) * 0.05, vy: -0.06 - Math.random() * 0.05 });
+      }
+    }
+    this.drops = this.drops.filter((d) => !d.done);
+    for (const r of this.rings) r.age += dt;
+    this.rings = this.rings.filter((r) => r.age < (r.splash ? 0.5 : 1.6));
+    if (this.meta.fallBase && !reducedMotion) {
+      this.mistAcc += dt * 7;
+      while (this.mistAcc > 1) {
+        this.mistAcc--;
+        this.mist.push({ x: this.meta.fallBase[0] + (Math.random() - 0.5) * 0.05, y: this.meta.fallBase[1] + Math.random() * 0.01, vx: (Math.random() - 0.5) * 0.012, vy: -0.01 - Math.random() * 0.02, s: 0.012 + Math.random() * 0.02, age: 0, life: 2 + Math.random() * 1.5 });
+      }
+    }
+    for (const q of this.mist) { q.age += dt; q.x += q.vx * dt; q.y += q.vy * dt; q.s += dt * 0.006; }
+    this.mist = this.mist.filter((q) => q.age < q.life);
+    for (const p of this.motes) { p.t += p.sp * dt * (reducedMotion ? 0.4 : 1); if (p.t > 1) p.t -= 1; p.ph += dt; }
+  }
+  toScreen(u, v, view) {
+    return [((u - view.center[0]) / view.span[0] + 0.5) * this.cv.width, ((v - view.center[1]) / view.span[1] + 0.5) * this.cv.height];
+  }
+  draw(view, st, time) {
+    const c = this.c, m = this.meta;
+    c.clearRect(0, 0, this.cv.width, this.cv.height);
+    const kx = this.cv.width / view.span[0];
+    const lit = clamp(st.reveal, 0, 1);
+    c.globalCompositeOperation = 'lighter';
+    for (const g of this.twinkle) { // vers luisants qui scintillent
+      const a = (0.5 + 0.5 * Math.sin(time * g.sp + g.ph)) * 0.55 * (0.35 + 0.65 * lit);
+      const [x, y] = this.toScreen(g.p[0], g.p[1], view), s = 0.011 * kx;
+      c.globalAlpha = a; c.drawImage(this.cyan, x - s / 2, y - s / 2, s, s);
+    }
+    if (m.moon && m.ship) { // poussière dans le rayon de lune
+      for (const p of this.motes) {
+        const u = lerp(m.moon[0], m.ship[0] - 0.08, p.t) + p.off * 0.12 * p.t + Math.sin(p.ph * 0.3) * 0.004;
+        const v = lerp(m.moon[1] + 0.05, m.ship[1] + 0.1, p.t) + Math.cos(p.ph * 0.23) * 0.004;
+        const a = (0.25 + 0.35 * Math.pow(Math.sin(p.ph * 1.7), 2)) * lit * (0.35 + 0.65 * st.spot) * (1 - Math.abs(p.off) * 1.2);
+        if (a <= 0.01) continue;
+        const [x, y] = this.toScreen(u, v, view), s = 0.004 * kx;
+        c.globalAlpha = a; c.drawImage(this.white, x - s / 2, y - s / 2, s, s);
+      }
+    }
+    for (const q of this.mist) { // brume de la cascade
+      const a = Math.sin(Math.PI * (q.age / q.life)) * 0.22 * (0.3 + 0.7 * lit);
+      const [x, y] = this.toScreen(q.x, q.y, view), s = q.s * kx;
+      c.globalAlpha = a; c.drawImage(this.white, x - s / 2, y - s / 2, s, s);
+    }
+    if (m.chest) { // éclat sur le trésor
+      const cycle = 2.7, ph = (time % cycle) / 0.6;
+      if (ph < 1) {
+        const k = Math.floor(time / cycle);
+        const [x, y] = this.toScreen(m.chest[0] + 0.012 * Math.sin(k * 12.9), m.chest[1] + 0.004 * Math.cos(k * 7.3), view), s = 0.03 * kx;
+        c.globalAlpha = Math.sin(Math.PI * ph) * lit;
+        c.drawImage(this.gold, x - s / 2, y - s * 0.06, s, s * 0.12);
+        c.drawImage(this.gold, x - s * 0.06, y - s / 2, s * 0.12, s);
+      }
+    }
+    for (const d of this.drops) { // gouttes qui tombent
+      const [x, y] = this.toScreen(d.x, d.y0 + 0.5 * G * d.age * d.age, view), r = 0.0022 * kx;
+      c.globalAlpha = 0.9 * (0.4 + 0.6 * lit);
+      c.drawImage(this.white, x - r, y - r * 2.2, r * 2, r * 4.4);
+    }
+    c.globalCompositeOperation = 'source-over';
+    c.fillStyle = 'rgb(225,238,255)';
+    c.strokeStyle = 'rgb(200,225,255)';
+    for (const r of this.rings) { // éclaboussures et ronds dans l'eau
+      if (r.splash) {
+        const t = r.age, [x, y] = this.toScreen(r.x + r.vx * t, r.y + r.vy * t + 0.5 * G * t * t, view);
+        c.globalAlpha = (1 - t / 0.5) * 0.8 * (0.4 + 0.6 * lit);
+        c.beginPath(); c.arc(x, y, Math.max(1, 0.0012 * kx), 0, Math.PI * 2); c.fill();
+        continue;
+      }
+      const [x, y] = this.toScreen(r.x, r.y, view);
+      for (let k = 0; k < 2; k++) {
+        const tt = r.age / 1.6 - k * 0.18;
+        if (tt <= 0) continue;
+        const rad = easeOut(tt) * 0.04 * kx;
+        c.globalAlpha = (1 - tt) * 0.55 * (0.4 + 0.6 * lit);
+        c.lineWidth = Math.max(1, 0.0012 * kx);
+        c.beginPath(); c.ellipse(x, y, rad, rad * 0.26, 0, 0, Math.PI * 2); c.stroke();
+      }
+    }
+    c.globalAlpha = 1;
+  }
+}
+
+/* =========================================================================
+   6. AUDIO : ambiance de grotte, bruitages et musique, synthétisés en direct.
+   Dans l'application, ils viendront d'une bibliothèque de sons enregistrés.
+   ========================================================================= */
+class AudioEngine {
+  constructor(context) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = (this.ctx = context || new AC());
+    this.live = new Set();
+    this.musicOn = true;
+    this.master = ctx.createGain(); this.master.gain.value = 0.9;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -16; comp.knee.value = 12; comp.ratio.value = 3; comp.attack.value = 0.01; comp.release.value = 0.25;
+    this.master.connect(comp); comp.connect(ctx.destination);
+    this.reverb = ctx.createConvolver();
+    this.reverb.buffer = this.impulse(3.6, 2.4);
+    const ret = ctx.createGain(); ret.gain.value = 0.55;
+    this.reverb.connect(ret); ret.connect(this.master);
+    // Ambiance : sources → ambIn (baisse sous la voix) → ambLevel (fondus) → sortie + écho de grotte
+    this.ambIn = ctx.createGain(); this.ambLevel = ctx.createGain(); this.ambLevel.gain.value = 0;
+    this.ambIn.connect(this.ambLevel); this.ambLevel.connect(this.master); this.send(this.ambLevel, 0.3);
+    this.musicIn = ctx.createGain(); this.musicLevel = ctx.createGain(); this.musicLevel.gain.value = 0;
+    this.musicIn.connect(this.musicLevel); this.musicLevel.connect(this.master); this.send(this.musicLevel, 0.45);
+    this.sfx = ctx.createGain(); this.sfx.connect(this.master);
+    this.voice = ctx.createGain(); this.voice.connect(this.master); this.send(this.voice, 0.05);
+    this.pink = this.noise(6, 'pink');
+    this.brown = this.noise(6, 'brown');
+    this.creakBuf = this.makeCreak(1.4);
+  }
+  now() { return this.ctx.currentTime; }
+  resume() { return this.ctx.state === 'suspended' && this.ctx.resume ? this.ctx.resume() : Promise.resolve(); }
+  track(src) { this.live.add(src); src.onended = () => this.live.delete(src); return src; }
+  send(node, amount) { const s = this.ctx.createGain(); s.gain.value = amount; node.connect(s); s.connect(this.reverb); return s; }
+  pan(node, value) {
+    if (!this.ctx.createStereoPanner) return node;
+    const p = this.ctx.createStereoPanner(); p.pan.value = clamp(value, -1, 1);
+    node.connect(p); return p;
+  }
+  noise(seconds, color) {
+    const ctx = this.ctx, rate = ctx.sampleRate, len = Math.floor(rate * seconds), buf = ctx.createBuffer(2, len, rate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0, last = 0;
+      for (let i = 0; i < len; i++) {
+        const w = Math.random() * 2 - 1;
+        if (color === 'pink') {
+          b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.969 * b2 + w * 0.153852;
+          b3 = 0.8665 * b3 + w * 0.3104856; b4 = 0.55 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.016898;
+          d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11; b6 = w * 0.115926;
+        } else {
+          last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5;
+        }
+      }
+      const fade = Math.floor(rate * 0.05); // raccord de boucle sans clic
+      for (let i = 0; i < fade; i++) { const t = i / fade; d[len - fade + i] = d[len - fade + i] * (1 - t) + d[i] * t; }
+    }
+    return buf;
+  }
+  impulse(seconds, decay) { // réponse d'une grande grotte : échos proches puis queue qui s'assombrit
+    const ctx = this.ctx, rate = ctx.sampleRate, len = Math.floor(rate * seconds), buf = ctx.createBuffer(2, len, rate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      let lp = 0;
+      for (let i = 0; i < len; i++) {
+        const t = i / len, a = 0.15 + 0.8 * t;
+        lp = a * lp + (1 - a) * (Math.random() * 2 - 1);
+        d[i] = lp * Math.pow(1 - t, decay) * (i < rate * 0.012 ? i / (rate * 0.012) : 1);
+      }
+      [0.013, 0.021, 0.034, 0.047, 0.061, 0.083].forEach((s, k) => {
+        const idx = Math.floor((s + ch * 0.0027) * rate);
+        if (idx < len) d[idx] += (0.55 - k * 0.07) * (k % 2 ? -1 : 1);
+      });
+    }
+    return buf;
+  }
+  makeCreak(seconds) { // bois qui grince : frottement « colle-glisse » filtré par les résonances du bois
+    const ctx = this.ctx, rate = ctx.sampleRate, len = Math.floor(rate * seconds), buf = ctx.createBuffer(1, len, rate), d = buf.getChannelData(0);
+    let t = 0;
+    while (t < seconds) {
+      const p = t / seconds, env = Math.pow(Math.sin(Math.PI * p), 0.7);
+      const f = 48 + 95 * Math.sin(Math.PI * Math.min(1, p * 1.25)) * (0.85 + 0.3 * Math.random());
+      const i0 = Math.floor(t * rate), amp = env * (0.55 + 0.45 * Math.random());
+      for (let k = 0; k < rate * 0.003 && i0 + k < len; k++) d[i0 + k] += amp * (Math.random() * 2 - 1) * Math.exp(-k / (rate * 0.0007));
+      t += (1 / f) * (0.8 + 0.4 * Math.random());
+    }
+    return buf;
+  }
+  startAmbience() {
+    const ctx = this.ctx, t = ctx.currentTime;
+    const rumble = ctx.createBufferSource(); rumble.buffer = this.brown; rumble.loop = true; // grondement grave
+    const rl = ctx.createBiquadFilter(); rl.type = 'lowpass'; rl.frequency.value = 150;
+    const rg = ctx.createGain(); rg.gain.value = 0.32;
+    rumble.connect(rl); rl.connect(rg); rg.connect(this.ambIn);
+    rumble.start(t); this.track(rumble);
+    const wind = ctx.createBufferSource(); wind.buffer = this.pink; wind.loop = true; // souffle à l'entrée de la grotte
+    const wb = ctx.createBiquadFilter(); wb.type = 'bandpass'; wb.frequency.value = 620; wb.Q.value = 3.5;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.045;
+    const lg = ctx.createGain(); lg.gain.value = 160;
+    lfo.connect(lg); lg.connect(wb.frequency); lfo.start(t); this.track(lfo);
+    const wg = ctx.createGain(); wg.gain.value = 0.035;
+    wind.connect(wb); wb.connect(wg); wg.connect(this.ambIn);
+    wind.start(t, 1.3); this.track(wind);
+    this.ambLevel.gain.cancelScheduledValues(t);
+    this.ambLevel.gain.setValueAtTime(0.0001, t);
+    this.ambLevel.gain.linearRampToValueAtTime(0.7, t + 2.8);
+    this.nextWave = t + 0.2; this.nextLap = t + 0.6; this.nextDrip = t + 4.5;
+    const tick = () => { // vagues, clapotis et gouttes lointaines, programmés au fil de l'eau
+      const ahead = ctx.currentTime + 2.5;
+      while (this.nextWave < ahead) { this.wave(this.nextWave, 1); this.nextWave += 3.6 + Math.random() * 3.2; }
+      while (this.nextLap < ahead) { this.lap(this.nextLap); this.nextLap += 0.35 + Math.random() * 1.1; }
+      while (this.nextDrip < ahead) { this.drip(this.nextDrip, 0.35, (Math.random() - 0.5) * 1.4, this.ambIn); this.nextDrip += 3 + Math.random() * 5; }
+    };
+    tick();
+    clearInterval(this.ticker);
+    this.ticker = setInterval(tick, 500);
+  }
+  wave(when, strength) {
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource(); src.buffer = this.pink; src.loop = true;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.6;
+    const g = ctx.createGain();
+    const rise = 1.6 + Math.random() * 1.4, fall = 2.8 + Math.random() * 2.4, peak = (0.2 + Math.random() * 0.12) * strength;
+    lp.frequency.setValueAtTime(240, when);
+    lp.frequency.linearRampToValueAtTime(700 + 600 * Math.random() * strength, when + rise);
+    lp.frequency.linearRampToValueAtTime(260, when + rise + fall);
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.linearRampToValueAtTime(peak, when + rise);
+    g.gain.linearRampToValueAtTime(0.0001, when + rise + fall);
+    src.connect(lp); lp.connect(g);
+    this.pan(g, (Math.random() - 0.5) * 1.2).connect(this.ambIn);
+    src.start(when, Math.random() * 4); src.stop(when + rise + fall + 0.2); this.track(src);
+    this.wash(when + rise - 0.25, peak * 0.9);
+  }
+  wash(when, level) { // le ressac sur la roche, au sommet de la vague
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource(); src.buffer = this.pink; src.loop = true;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 700;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1500 + Math.random() * 900; bp.Q.value = 0.7;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.linearRampToValueAtTime(level * 0.55, when + 0.25);
+    g.gain.setTargetAtTime(0.0001, when + 0.3, 0.45);
+    src.connect(hp); hp.connect(bp); bp.connect(g);
+    this.pan(g, (Math.random() - 0.5) * 1.4).connect(this.ambIn);
+    src.start(when, Math.random() * 4); src.stop(when + 2.8); this.track(src);
+  }
+  lap(when) { // clapotis contre la roche et la coque
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource(); src.buffer = this.pink; src.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 380 + Math.random() * 700; bp.Q.value = 2.2;
+    const g = ctx.createGain();
+    const lvl = 0.05 + Math.random() * 0.06, dur = 0.12 + Math.random() * 0.22;
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.linearRampToValueAtTime(lvl, when + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + dur + 0.12);
+    src.connect(bp); bp.connect(g);
+    this.pan(g, (Math.random() - 0.5) * 1.6).connect(this.ambIn);
+    src.start(when, Math.random() * 5); src.stop(when + dur + 0.2); this.track(src);
+  }
+  drip(when, level = 1, panValue = 0, bus = this.sfx) { // goutte : une bulle qui résonne en montant, beaucoup d'écho
+    const ctx = this.ctx, f0 = 950 + Math.random() * 850;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(f0, when);
+    o.frequency.exponentialRampToValueAtTime(f0 * 2.2, when + 0.05);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(0.4 * level, when + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + 0.12);
+    o.connect(g);
+    const out = this.pan(g, panValue);
+    const dry = ctx.createGain(); dry.gain.value = 0.55;
+    out.connect(dry); dry.connect(bus);
+    this.send(out, 1.2);
+    o.start(when); o.stop(when + 0.15); this.track(o);
+  }
+  swell(when) { this.wave(when, 1.9); this.lap(when + 2.2); this.lap(when + 2.6); }
+  creak(when, pitch = 1, level = 0.5) {
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource(); src.buffer = this.creakBuf; src.playbackRate.value = pitch;
+    const sum = ctx.createGain(); sum.gain.value = level * 10;
+    [[380, 9, 1], [860, 8, 0.7], [1650, 6, 0.4], [2900, 5, 0.18]].forEach(([f, q, a]) => {
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f * (0.9 + Math.random() * 0.2); bp.Q.value = q;
+      const g = ctx.createGain(); g.gain.value = a;
+      src.connect(bp); bp.connect(g); g.connect(sum);
+    });
+    const out = this.pan(sum, 0.15);
+    out.connect(this.sfx); this.send(out, 0.4);
+    src.start(when); this.track(src);
+  }
+  bell(when, level = 0.12, f0 = 415) { // cloche lointaine : partiels inharmoniques, beaucoup d'écho
+    const ctx = this.ctx;
+    const sum = ctx.createGain(); sum.gain.value = level;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
+    sum.connect(lp);
+    const out = this.pan(lp, -0.35);
+    out.connect(this.sfx); this.send(out, 1.1);
+    [[0.5, 0.55, 5], [1, 1, 3.6], [1.19, 0.55, 2.6], [1.51, 0.45, 2], [2, 0.5, 1.6], [2.51, 0.3, 1.2], [2.66, 0.24, 1], [3.01, 0.18, 0.8], [4.16, 0.1, 0.55]].forEach(([r, a, dec]) => {
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f0 * r;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, when);
+      g.gain.exponentialRampToValueAtTime(a, when + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + dec * 1.5);
+      o.connect(g); g.connect(sum);
+      o.start(when); o.stop(when + dec * 1.5 + 0.05); this.track(o);
+    });
+  }
+  ignite(when) { // une flamme qui prend : souffle grave et petits crépitements
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource(); src.buffer = this.pink; src.loop = true;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.linearRampToValueAtTime(0.22, when + 0.08);
+    g.gain.setTargetAtTime(0.0001, when + 0.12, 0.25);
+    src.connect(lp); lp.connect(g);
+    this.pan(g, 0.3).connect(this.sfx);
+    src.start(when, Math.random() * 3); src.stop(when + 1.4); this.track(src);
+    for (let i = 0; i < 7; i++) {
+      const t = when + 0.1 + Math.random() * 0.8;
+      const c = ctx.createBufferSource(); c.buffer = this.pink;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2500 + Math.random() * 2500; bp.Q.value = 3;
+      const cg = ctx.createGain();
+      cg.gain.setValueAtTime(0.0001, t);
+      cg.gain.exponentialRampToValueAtTime(0.08 + Math.random() * 0.08, t + 0.002);
+      cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
+      c.connect(bp); bp.connect(cg);
+      this.pan(cg, 0.3).connect(this.sfx);
+      c.start(t, Math.random() * 5); c.stop(t + 0.05); this.track(c);
+    }
+  }
+  shimmer(when) { // quatre notes cristallines, discrètes (coupées avec la musique)
+    const ctx = this.ctx;
+    [880, 1046.5, 1318.5, 1760].forEach((f, i) => {
+      const t = when + i * 0.14;
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.045, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+      o.connect(g); g.connect(this.musicIn);
+      o.start(t); o.stop(t + 1.5); this.track(o);
+    });
+  }
+  musicStart() { // nappe grave et mystérieuse (la mineur), très discrète
+    const ctx = this.ctx, t = ctx.currentTime;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 650; lp.Q.value = 0.4;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.06;
+    const lg = ctx.createGain(); lg.gain.value = 180;
+    lfo.connect(lg); lg.connect(lp.frequency); lfo.start(t); this.track(lfo);
+    lp.connect(this.musicIn);
+    [[110, 0.9], [164.81, 0.6], [220, 0.35], [329.63, 0.18]].forEach(([f, a]) => {
+      [-5, 5].forEach((cents) => {
+        const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f; o.detune.value = cents;
+        const g = ctx.createGain(); g.gain.value = a * 0.03;
+        o.connect(g); g.connect(lp);
+        o.start(t); this.track(o);
+      });
+    });
+    this.musicLevel.gain.cancelScheduledValues(t);
+    this.musicLevel.gain.setValueAtTime(0.0001, t);
+    this.musicLevel.gain.linearRampToValueAtTime(this.musicOn ? 1 : 0.0001, t + 5);
+  }
+  setMusic(on) {
+    this.musicOn = on;
+    const t = this.ctx.currentTime, g = this.musicLevel.gain;
+    if (!this.live.size) return;
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(on ? 1 : 0.0001, t + 0.8);
+  }
+  duck(on) { // la voix passe devant : l'ambiance et la musique se retirent un peu
+    const t = this.ctx.currentTime;
+    [this.ambIn, this.musicIn].forEach((node) => {
+      node.gain.cancelScheduledValues(t);
+      node.gain.setValueAtTime(node.gain.value, t);
+      node.gain.setTargetAtTime(on ? 0.5 : 1, t, on ? 0.12 : 0.45);
+    });
+  }
+  playBuffer(buffer, when, offset, duration) {
+    const src = this.ctx.createBufferSource(); src.buffer = buffer;
+    src.connect(this.voice);
+    src.start(when, offset, duration); this.track(src);
+  }
+  stopAll() {
+    const ctx = this.ctx, t = ctx.currentTime;
+    clearInterval(this.ticker); this.ticker = null;
+    const g = this.master.gain;
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0.0001, t + 0.35);
+    [this.ambLevel.gain, this.musicLevel.gain, this.ambIn.gain, this.musicIn.gain].forEach((p) => { p.cancelScheduledValues(t); });
+    this.ambLevel.gain.setValueAtTime(0.0001, t + 0.36);
+    this.musicLevel.gain.setValueAtTime(0.0001, t + 0.36);
+    this.ambIn.gain.setValueAtTime(1, t + 0.36);
+    this.musicIn.gain.setValueAtTime(1, t + 0.36);
+    const sources = [...this.live];
+    this.live.clear();
+    setTimeout(() => {
+      sources.forEach((s) => { try { s.stop(); } catch (e) { /* déjà arrêtée */ } });
+      g.cancelScheduledValues(ctx.currentTime); g.setValueAtTime(0.9, ctx.currentTime);
+    }, 420);
+  }
+}
+
+/* =========================================================================
+   7. NARRATION : voix du navigateur (provisoire) ou fichiers audio déposés
+   ========================================================================= */
+const estimateSeconds = (text) => Math.max(1.1, text.split(/\s+/).length * 0.42 + 0.3);
+
+const browserVoice = {
+  voices: [],
+  chosen: null,
+  silent: false,
+  load(timeout = 1500) {
+    return new Promise((resolve) => {
+      const synth = window.speechSynthesis;
+      if (!synth) { resolve([]); return; }
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        const all = synth.getVoices() || [];
+        const score = (v) => (v.lang === 'fr-FR' ? 2 : 0) + (/natural|neural|online/i.test(v.name) ? 4 : 0) + (/premium|enhanced|amélior/i.test(v.name) ? 3 : 0) + (/google/i.test(v.name) ? 1 : 0);
+        this.voices = all.filter((v) => /^fr\b/i.test(v.lang)).sort((a, b) => score(b) - score(a));
+        const saved = loadPref('voice', '');
+        this.chosen = this.voices.find((v) => v.name === saved) || this.voices[0] || null;
+        resolve(this.voices);
+      };
+      if ((synth.getVoices() || []).length) { finish(); return; }
+      if (synth.addEventListener) synth.addEventListener('voiceschanged', finish, { once: true });
+      setTimeout(finish, timeout);
+    });
+  },
+  unlock() { // iOS exige que la première prise de parole parte d'un geste
+    try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch (e) { /* pas de synthèse vocale */ }
+  },
+  cancel() { try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (e) { /* rien */ } },
+  speak(text) {
+    const synth = window.speechSynthesis;
+    if (!synth || this.silent || !this.chosen) return { started: Promise.resolve(), ended: wait(estimateSeconds(text)) };
+    let startResolve, endResolve, started = false, ended = false;
+    const startP = new Promise((r) => { startResolve = r; });
+    const endP = new Promise((r) => { endResolve = r; });
+    const begin = () => { if (!started) { started = true; startResolve(); } };
+    const finish = (delay = 0) => { if (!ended) { ended = true; setTimeout(endResolve, delay * 1000); } };
+    const u = new SpeechSynthesisUtterance(text);
+    u.voice = this.chosen; u.lang = this.chosen.lang || 'fr-FR'; u.rate = 0.88; u.pitch = 0.98; u.volume = 1;
+    u.onstart = begin;
+    u.onend = () => { begin(); finish(); };
+    u.onerror = () => { begin(); finish(estimateSeconds(text)); };
+    synth.speak(u);
+    setTimeout(begin, 1200); // certains navigateurs n'envoient pas « start »
+    setTimeout(() => finish(), (estimateSeconds(text) * 2.2 + 2) * 1000);
+    return { started: startP, ended: endP };
+  },
+};
+
+let userVoice = { mode: null, buffers: [], bounds: null, names: [], auto: false };
+
+// Repère les silences d'un enregistrement unique pour le couper en phrases.
+function findCuts(buf, nCuts) {
+  const rate = buf.sampleRate, chs = buf.numberOfChannels, step = 0.02, win = Math.floor(rate * step), nWin = Math.floor(buf.length / win);
+  const rms = new Float32Array(nWin);
+  let max = 0;
+  for (let w = 0; w < nWin; w++) {
+    let s = 0;
+    for (let c = 0; c < chs; c++) { const d = buf.getChannelData(c); for (let i = w * win; i < (w + 1) * win; i++) s += d[i] * d[i]; }
+    rms[w] = Math.sqrt(s / (win * chs));
+    if (rms[w] > max) max = rms[w];
+  }
+  const thr = Math.max(0.004, max * 0.06);
+  let first = 0; while (first < nWin && rms[first] < thr) first++;
+  let last = nWin - 1; while (last > first && rms[last] < thr) last--;
+  const runs = [];
+  for (let w = first; w <= last;) {
+    if (rms[w] < thr) {
+      let e = w; while (e <= last && rms[e] < thr) e++;
+      const dur = (e - w) * step;
+      if (dur >= 0.18) runs.push({ mid: ((w + e) / 2) * step, dur });
+      w = e;
+    } else w++;
+  }
+  runs.sort((a, b) => b.dur - a.dur);
+  return { start: first * step, end: (last + 1) * step, cuts: runs.slice(0, nCuts).map((r) => r.mid).sort((a, b) => a - b) };
+}
+
+/* =========================================================================
+   8. LE RÉGISSEUR : enchaîne phrases, bruitages et effets visuels
+   ========================================================================= */
+const vis = { reveal: 0.42, spot: 0.15, swell: 0, lantern: 0, zoom: 1 };
+let tweens = [];
+function tween(key, to, dur, delay = 0, ease = easeInOut) { tweens.push({ key, to, dur, ease, t0: performance.now() / 1000 + delay, from: null }); }
+function stepTweens(now) {
+  for (const tw of tweens) {
+    if (tw.from !== null || now < tw.t0) continue;
+    tw.from = vis[tw.key];
+    for (const o of tweens) if (o !== tw && o.key === tw.key && o.from !== null) o.dead = true;
+  }
+  for (const tw of tweens) {
+    if (tw.from === null || tw.dead) continue;
+    const p = tw.dur <= 0 ? 1 : clamp((now - tw.t0) / tw.dur, 0, 1);
+    vis[tw.key] = lerp(tw.from, tw.to, tw.ease(p));
+    if (p >= 1) tw.dead = true;
+  }
+  tweens = tweens.filter((tw) => !tw.dead);
+}
+
+let audio = null;
+const ensureAudio = () => (audio = audio || new AudioEngine());
+let run = 0;
+let dripCount = 0;
+let wakeLock = null;
+
+const CUES = {
+  ambience: () => { audio.startAmbience(); audio.musicStart(); },
+  dawn: () => tween('reveal', 1, 6.5),
+  drip: () => {
+    const k = dripCount++;
+    const fall = sparks.drip(k);
+    audio.drip(audio.now() + fall, 1, k % 2 ? 0.45 : -0.4);
+  },
+  swell: () => { audio.swell(audio.now()); tween('swell', 1, 1.8); tween('swell', 0.25, 4, 2.2); },
+  revealShip: () => tween('spot', 1, 3.4),
+  creak: () => { audio.creak(audio.now(), 1, 0.55); audio.creak(audio.now() + 1.25, 0.86, 0.35); },
+  lantern: () => { audio.ignite(audio.now()); audio.shimmer(audio.now() + 0.2); tween('lantern', 1, 1.3, 0, easeOut); },
+  bell: () => { audio.bell(audio.now()); audio.bell(audio.now() + 1.7, 0.08); },
+  endCard: () => { $('#stop').hidden = true; showScreen($('#end')); releaseWakeLock(); },
+};
+
+function fire(at, when = 'start') {
+  const myRun = run;
+  SCENE.cues
+    .filter((c) => c.at === at && (c.when || 'start') === when)
+    .forEach((c) => setTimeout(() => { if (myRun === run && CUES[c.run]) CUES[c.run](); }, c.delay * 1000));
+}
+
+function speakSegment(i) {
+  const text = SCENE.segments[i].text;
+  if (userVoice.mode === 'single') {
+    const a = userVoice.bounds[i], b = userVoice.bounds[i + 1];
+    audio.playBuffer(userVoice.buffers[0], audio.now() + 0.05, a, b - a);
+    return { started: wait(0.05), ended: wait(0.05 + (b - a)), ownTiming: true };
+  }
+  if (userVoice.mode === 'multi' && userVoice.buffers[i]) {
+    const buf = userVoice.buffers[i];
+    audio.playBuffer(buf, audio.now() + 0.05, 0, buf.duration);
+    return { started: wait(0.05), ended: wait(0.05 + buf.duration) };
+  }
+  return browserVoice.speak(text);
+}
+
+let subTimer = null;
+function showSubtitle(text) {
+  clearTimeout(subTimer);
+  if (!$('#opt-subs').checked) return;
+  const el = $('#subtitle');
+  el.textContent = text;
+  el.classList.add('on');
+}
+function hideSubtitle(delay = 0) {
+  clearTimeout(subTimer);
+  subTimer = setTimeout(() => $('#subtitle').classList.remove('on'), delay * 1000);
+}
+function showScreen(el) { clearTimeout(el.hideTimer); el.hidden = false; el.classList.remove('is-leaving'); }
+function hideScreen(el) {
+  if (el.hidden) return;
+  el.classList.add('is-leaving');
+  clearTimeout(el.hideTimer);
+  el.hideTimer = setTimeout(() => { el.hidden = true; el.classList.remove('is-leaving'); }, reducedMotion ? 0 : 600);
+}
+async function requestWakeLock() { try { wakeLock = navigator.wakeLock ? await navigator.wakeLock.request('screen') : null; } catch (e) { wakeLock = null; } }
+function releaseWakeLock() { try { if (wakeLock) wakeLock.release(); } catch (e) { /* rien */ } wakeLock = null; }
+
+async function play() {
+  const id = ++run;
+  const alive = () => id === run;
+  ensureAudio();
+  audio.musicOn = $('#opt-music').checked;
+  browserVoice.unlock();
+  try { await audio.resume(); } catch (e) { /* le son reste coupé */ }
+  await Promise.race([voicesReady, wait(1.6)]);
+  if (!alive()) return;
+  hideScreen($('#start')); hideScreen($('#end'));
+  $('#stop').hidden = false;
+  requestWakeLock();
+  dripCount = 0;
+  tweens = [];
+  tween('reveal', 0.04, 0.7, 0, easeOut); tween('spot', 0, 0.7); tween('lantern', 0, 0.5); tween('swell', 0, 0.5);
+  vis.zoom = reducedMotion ? 1 : 1.07;
+  if (!reducedMotion) tween('zoom', 1, 17, 0.7, easeOut);
+  await wait(0.8); if (!alive()) return;
+  fire('intro');
+  await wait(SCENE.intro); if (!alive()) return;
+  for (let i = 0; i < SCENE.segments.length; i++) {
+    const seg = SCENE.segments[i];
+    const h = speakSegment(i);
+    await h.started; if (!alive()) return;
+    audio.duck(true); fire(i, 'start'); showSubtitle(seg.text);
+    await h.ended; if (!alive()) return;
+    audio.duck(false); fire(i, 'end');
+    const pause = h.ownTiming ? 0 : seg.pause;
+    hideSubtitle(Math.min(0.6, pause));
+    await wait(pause); if (!alive()) return;
+  }
+  hideSubtitle(0.4);
+  fire('outro');
+}
+
+function stop(toStart = true) {
+  run++;
+  browserVoice.cancel();
+  if (audio) audio.stopAll();
+  tweens = [];
+  tween('reveal', 0.42, 0.8); tween('spot', 0.15, 0.8); tween('lantern', 0, 0.6); tween('swell', 0, 0.6); tween('zoom', 1, 0.8);
+  hideSubtitle(0);
+  $('#stop').hidden = true;
+  hideScreen($('#end'));
+  if (toStart) showScreen($('#start'));
+  releaseWakeLock();
+}
+
+/* =========================================================================
+   9. TES FICHIERS : image et voix générées par IA
+   ========================================================================= */
+let current = null;      // scène affichée
+let standIn = null;      // illustration provisoire
+let customImage = null;  // image déposée
+
+function setScene(scene) {
+  current = scene;
+  renderer.setScene(scene);
+  sparks.setMeta(scene.meta);
+}
+function applyCustomImage() {
+  const wl = +$('#waterline').value, cv = customImage.canvas;
+  setScene({ image: cv, fx: customFx(wl, cv.width / cv.height), w: cv.width, h: cv.height, meta: customMeta(wl) });
+}
+async function useImage(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const im = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = url; });
+    const scale = Math.min(1, 2048 / Math.max(im.naturalWidth, im.naturalHeight));
+    const cv = makeCanvas(Math.max(1, Math.round(im.naturalWidth * scale)), Math.max(1, Math.round(im.naturalHeight * scale)));
+    cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+    customImage = { canvas: cv, name: file.name };
+    $('#waterline-field').hidden = false;
+    applyCustomImage();
+  } catch (e) {
+    customImage = null;
+    renderStatus(`Impossible de lire l'image « ${file.name} ». Essaie un PNG, JPG ou WebP.`);
+    return;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+  renderStatus();
+}
+function decodeAudio(ctx, data) {
+  return new Promise((resolve, reject) => {
+    const p = ctx.decodeAudioData(data, resolve, reject);
+    if (p && p.then) p.then(resolve, reject);
+  });
+}
+async function useVoice(files) {
+  ensureAudio();
+  const n = SCENE.segments.length;
+  files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const picked = files.slice(0, n);
+  let decoded;
+  try {
+    decoded = [];
+    for (const f of picked) decoded.push(await decodeAudio(audio.ctx, await f.arrayBuffer()));
+  } catch (e) {
+    renderStatus('Impossible de lire ce fichier audio. Essaie un WAV ou un MP3.');
+    return;
+  }
+  if (decoded.length === 1) {
+    const buf = decoded[0];
+    const { start, end, cuts } = findCuts(buf, n - 1);
+    const auto = cuts.length === n - 1;
+    let bounds;
+    if (auto) bounds = [start, ...cuts, Math.min(buf.duration, end + 0.25)];
+    else { // repli : découpage proportionnel à la longueur des phrases
+      const lens = SCENE.segments.map((s) => s.text.length), total = lens.reduce((a, b) => a + b, 0);
+      bounds = [start]; let acc = 0;
+      lens.forEach((l) => { acc += l; bounds.push(start + ((end - start) * acc) / total); });
+      bounds[n] = Math.min(buf.duration, end + 0.25);
+    }
+    userVoice = { mode: 'single', buffers: decoded, bounds, names: [picked[0].name], auto };
+  } else {
+    userVoice = { mode: 'multi', buffers: decoded, bounds: null, names: picked.map((f) => f.name), auto: true };
+  }
+  renderStatus();
+}
+async function handleFiles(list) {
+  const files = [...list];
+  const images = files.filter((f) => f.type.startsWith('image/'));
+  const audios = files.filter((f) => f.type.startsWith('audio/') || /\.(wav|mp3|ogg|oga|m4a|aac|flac|opus|webm)$/i.test(f.name));
+  $('#mine').open = true;
+  if (!images.length && !audios.length) { renderStatus('Format non reconnu : dépose une image (PNG, JPG, WebP) ou un fichier audio (WAV, MP3, OGG).'); return; }
+  if (images.length) await useImage(images[0]);
+  if (audios.length) await useVoice(audios);
+}
+function renderStatus(error) {
+  const ul = $('#mine-status');
+  ul.textContent = '';
+  const add = (text, warn) => { const li = document.createElement('li'); li.textContent = text; if (warn) li.className = 'warn'; ul.append(li); };
+  if (customImage) add(`Image : ${customImage.name}`);
+  const n = SCENE.segments.length;
+  if (userVoice.mode === 'single') add(`Voix : ${userVoice.names[0]}, ${userVoice.auto ? `découpée aux silences en ${n} phrases` : 'découpage approximatif (silences introuvables)'}`, !userVoice.auto);
+  if (userVoice.mode === 'multi') add(`Voix : ${userVoice.buffers.length} fichier${userVoice.buffers.length > 1 ? 's' : ''} pour ${n} phrases${userVoice.buffers.length < n ? ' (la suite avec la voix du navigateur)' : ''}`, userVoice.buffers.length < n);
+  if (error) add(error, true);
+  $('#reset-mine').hidden = !(customImage || userVoice.mode);
+  $('#voice-note').textContent = userVoice.mode
+    ? 'Voix : tes fichiers. Les sons et l’animation restent créés en direct.'
+    : 'Voix provisoire : celle de ton navigateur. Les sons et l’animation sont créés en direct, sans aucun fichier.';
+}
+function resetMine() {
+  customImage = null;
+  userVoice = { mode: null, buffers: [], bounds: null, names: [], auto: false };
+  $('#waterline-field').hidden = true;
+  $('#file-image').value = ''; $('#file-voice').value = '';
+  setScene(standIn);
+  renderStatus();
+}
+
+/* =========================================================================
+   10. DÉMARRAGE
+   ========================================================================= */
+const sceneCanvas = $('#scene');
+let renderer;
+try { renderer = new Renderer(sceneCanvas); } catch (e) { renderer = new FlatRenderer(sceneCanvas); }
+const sparks = new Sparks($('#sparks'));
+standIn = paintStandIn();
+setScene(standIn);
+
+let lastFrame = performance.now() / 1000;
+function frame() {
+  const now = performance.now() / 1000, dt = Math.min(0.05, now - lastFrame);
+  lastFrame = now;
+  stepTweens(now);
+  renderer.resize(); sparks.resize();
+  const view = computeView(innerWidth, innerHeight, current.w, current.h, vis.zoom, current.meta.focus);
+  renderer.draw(view, vis, current, now);
+  sparks.update(dt);
+  sparks.draw(view, vis, now);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+async function initVoices() {
+  const sel = $('#voice');
+  const voices = await browserVoice.load();
+  sel.textContent = '';
+  if (!voices.length) {
+    sel.append(new Option('Aucune voix française dans ce navigateur', ''));
+    sel.disabled = true;
+    browserVoice.silent = true;
+    $('#voice-note').textContent = 'Ce navigateur n’a pas de voix française : l’intro se jouera avec les sous-titres seuls. Dépose une voix IA pour l’entendre.';
+    return;
+  }
+  voices.forEach((v, i) => sel.append(new Option(v.name + (v.localService === false ? ' (en ligne)' : ''), String(i))));
+  sel.value = String(Math.max(0, voices.indexOf(browserVoice.chosen)));
+  sel.addEventListener('change', () => { browserVoice.chosen = voices[+sel.value] || voices[0]; savePref('voice', browserVoice.chosen.name); });
+}
+const voicesReady = initVoices();
+
+$('#opt-subs').checked = loadPref('subs', 'true') === 'true';
+$('#opt-music').checked = loadPref('music', 'true') === 'true';
+$('#opt-subs').addEventListener('change', (e) => { savePref('subs', e.target.checked); if (!e.target.checked) hideSubtitle(0); });
+$('#opt-music').addEventListener('change', (e) => { savePref('music', e.target.checked); if (audio) audio.setMusic(e.target.checked); });
+$('#play').addEventListener('click', play);
+$('#replay').addEventListener('click', () => { stop(false); play(); });
+$('#back').addEventListener('click', () => stop(true));
+$('#stop').addEventListener('click', () => stop(true));
+$('#file-image').addEventListener('change', (e) => { if (e.target.files.length) handleFiles(e.target.files); });
+$('#file-voice').addEventListener('change', (e) => { if (e.target.files.length) handleFiles(e.target.files); });
+$('#waterline').addEventListener('input', () => { if (customImage) applyCustomImage(); });
+$('#reset-mine').addEventListener('click', resetMine);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#stop').hidden) stop(true); });
+
+let dragDepth = 0;
+const hasFiles = (e) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; $('#drop-hint').hidden = false; });
+addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+addEventListener('dragleave', (e) => { if (!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('#drop-hint').hidden = true; });
+addEventListener('drop', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault(); dragDepth = 0; $('#drop-hint').hidden = true;
+  if (!$('#stop').hidden) stop(true);
+  handleFiles(e.dataTransfer.files);
+});
+
+// Accès pour les tests automatisés.
+window.__storia = { SCENE, AudioEngine, findCuts, computeView, vis };
+})();
+</script>
+</body>
+</html>
