@@ -149,6 +149,11 @@ export interface WanRun {
   jobDir: string;
   /** Affiche la progression de Wan2GP dans ce terminal (sinon, elle est ignorée). */
   echo?: boolean;
+  log?: (message: string) => void;
+  /** Temps laissé à Wan2GP pour s'arrêter seul une fois sa file terminée (20 s par défaut). */
+  graceMs?: number;
+  /** Silence au-delà duquel Wan2GP est considéré comme bloqué (30 minutes par défaut). */
+  silenceMs?: number;
 }
 
 /** Lance un passage de Wan2GP et renvoie le fichier produit. */
@@ -158,15 +163,60 @@ export async function runWan(run: WanRun, name: string, settings: Record<string,
   const settingsPath = path.join(run.jobDir, `${name}.json`);
   await writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
   const started = Date.now();
-  const code = await new Promise<number | null>((resolve, reject) => {
+  const { code, stopped } = await new Promise<{ code: number | null; stopped: 'fini' | 'muet' | null }>((resolve, reject) => {
     const child = spawn(run.install.python, ['wgp.py', '--process', forward(settingsPath), '--output-dir', forward(outDir), '--attention', 'sdpa'], {
       cwd: run.install.appDir, // wgp.py lit ses réglages par défaut à partir de son dossier
       env: wanEnv(run.install.appDir),
-      stdio: ['ignore', run.echo ? 'inherit' : 'ignore', run.echo ? 'inherit' : 'ignore'],
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
-    child.on('error', (err) => reject(new Error(`Impossible de lancer Wan2GP (${run.install.python}) : ${err.message}`)));
-    child.on('exit', resolve);
+    let stopped: 'fini' | 'muet' | null = null;
+    let tail = '';
+    let grace: NodeJS.Timeout | undefined;
+    let silence: NodeJS.Timeout | undefined;
+    const stop = (why: 'fini' | 'muet') => {
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      stopped = why;
+      child.kill();
+    };
+    const alive = () => {
+      clearTimeout(silence);
+      silence = setTimeout(() => stop('muet'), run.silenceMs ?? 30 * 60_000);
+    };
+    const onData = (chunk: Buffer, out: NodeJS.WriteStream) => {
+      if (run.echo) out.write(chunk);
+      alive();
+      tail = (tail + chunk.toString('utf8')).slice(-500);
+      // Sous Windows avec une carte AMD, un processus PyTorch peut rester bloqué au moment de quitter
+      // (pytorch/pytorch#160759) : une fois la file terminée, on lui laisse un moment, puis on l'arrête.
+      if (!grace && /Queue completed/.test(tail)) grace = setTimeout(() => stop('fini'), run.graceMs ?? 20_000);
+    };
+    child.stdout.on('data', (chunk: Buffer) => onData(chunk, process.stdout));
+    child.stderr.on('data', (chunk: Buffer) => onData(chunk, process.stderr));
+    alive();
+    // Ctrl+C : Wan2GP s'arrête avec le générateur, sans rester en arrière-plan à occuper la carte graphique.
+    const interrupt = () => {
+      child.kill();
+      process.exit(130);
+    };
+    process.on('SIGINT', interrupt);
+    const done = () => {
+      clearTimeout(grace);
+      clearTimeout(silence);
+      process.off('SIGINT', interrupt);
+    };
+    child.on('error', (err) => {
+      done();
+      reject(new Error(`Impossible de lancer Wan2GP (${run.install.python}) : ${err.message}`));
+    });
+    child.on('close', (exitCode) => {
+      done();
+      resolve({ code: exitCode, stopped });
+    });
   });
+  if (stopped === 'fini') run.log?.("    (Wan2GP avait fini mais ne s'arrêtait pas, un défaut connu de PyTorch pour AMD sous Windows : arrêté.)");
+  if (stopped === 'muet') {
+    throw new Error(`Wan2GP n'a plus rien affiché pendant ${Math.round((run.silenceMs ?? 30 * 60_000) / 60_000)} minutes : il semblait bloqué, il a été arrêté. Ses réglages sont dans ${settingsPath}.`);
+  }
   // Un code 0 ne prouve rien : une tâche refusée ou une mise à jour manquante s'arrêtent aussi sans erreur.
   const pattern = want === 'image' ? IMAGE_FILE : VIDEO_FILE;
   const files = [];

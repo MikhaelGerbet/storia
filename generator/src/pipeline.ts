@@ -244,7 +244,7 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
   if (wan && o.wan) {
     // La carte graphique passe à Wan : le serveur de voix libère d'abord la sienne (il la reprendra au besoin).
     await Promise.all(ttsUrls.map((url) => releaseVoice(url)));
-    const run = { install: wan, jobDir: path.join(folder, 'wan'), echo: o.wan.echo };
+    const run = { install: wan, jobDir: path.join(folder, 'wan'), echo: o.wan.echo, log: o.log };
     const seed = o.seed ?? Math.floor(Math.random() * 2 ** 31);
     let still = o.imagePath;
     if (!still) {

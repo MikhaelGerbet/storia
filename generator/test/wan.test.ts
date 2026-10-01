@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { runPipeline } from '../src/pipeline.ts';
-import { findWan, loopSettings } from '../src/wan.ts';
+import { findWan, loopSettings, runWan } from '../src/wan.ts';
 
 const playerPath = path.resolve(import.meta.dirname, '..', '..', 'prototype', 'intro-pirate', 'index.html');
 const sceneFile = path.resolve(import.meta.dirname, '..', 'scenes', 'navire-endormi.json');
@@ -18,11 +18,16 @@ const settings = JSON.parse(fs.readFileSync(args[args.indexOf('--process') + 1],
 const out = args[args.indexOf('--output-dir') + 1];
 fs.appendFileSync(path.join(__dirname, 'appels.jsonl'), JSON.stringify({ cwd: process.cwd(), args, settings, miopen: process.env.MIOPEN_FIND_MODE }) + '\\n');
 if (process.env.FAUX_WAN_RATE) process.exit(0);
-if (settings.model_type === 'i2v_2_2') {
-  if (!fs.existsSync(settings.image_start)) process.exit(1);
-  fs.writeFileSync(path.join(out, 'boucle_seed1.mp4'), 'fausse vidéo');
-} else {
-  fs.writeFileSync(path.join(out, 'image_seed1.jpg'), 'fausse image');
+if (process.env.FAUX_WAN_MUET) setInterval(() => {}, 1000); // ne dit plus rien et ne s'arrête jamais
+else {
+  if (settings.model_type === 'i2v_2_2') {
+    if (!fs.existsSync(settings.image_start)) process.exit(1);
+    fs.writeFileSync(path.join(out, 'boucle_seed1.mp4'), 'fausse vidéo');
+  } else {
+    fs.writeFileSync(path.join(out, 'image_seed1.jpg'), 'fausse image');
+  }
+  console.log('Queue completed: 1/1 tasks in 1s');
+  if (process.env.FAUX_WAN_BLOQUE) setInterval(() => {}, 1000); // a fini, mais ne quitte pas (PyTorch AMD sous Windows)
 }
 `;
 
@@ -117,4 +122,31 @@ test('Wan2GP qui s’arrête sans rien produire donne un message utile', { skip:
     }),
     /Wan2GP s'est arrêté \(code 0\) sans produire d'image/,
   );
+});
+
+test('Wan2GP qui a fini mais ne quitte pas est arrêté, et son image est gardée', { skip: !unix }, async (t) => {
+  const wan = await fakeWan(t);
+  const jobDir = await mkdtemp(path.join(os.tmpdir(), 'storia-wan-'));
+  t.after(() => rm(jobDir, { recursive: true, force: true }));
+  process.env.FAUX_WAN_BLOQUE = '1';
+  t.after(() => {
+    delete process.env.FAUX_WAN_BLOQUE;
+  });
+  const install = await findWan(wan.appDir);
+  const lines: string[] = [];
+  const file = await runWan({ install, jobDir, graceMs: 200, log: (l) => lines.push(l) }, 'image', { model_type: 'z_image' }, 'image');
+  assert.equal(path.basename(file), 'image_seed1.jpg');
+  assert.ok(lines.some((l) => /ne s'arrêtait pas/.test(l)));
+});
+
+test('Wan2GP muet trop longtemps est arrêté avec un message clair', { skip: !unix }, async (t) => {
+  const wan = await fakeWan(t);
+  const jobDir = await mkdtemp(path.join(os.tmpdir(), 'storia-wan-'));
+  t.after(() => rm(jobDir, { recursive: true, force: true }));
+  process.env.FAUX_WAN_MUET = '1';
+  t.after(() => {
+    delete process.env.FAUX_WAN_MUET;
+  });
+  const install = await findWan(wan.appDir);
+  await assert.rejects(runWan({ install, jobDir, silenceMs: 300 }, 'image', { model_type: 'z_image' }, 'image'), /semblait bloqué/);
 });
