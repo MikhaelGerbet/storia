@@ -251,17 +251,20 @@ def main() -> None:
     candidates = [(env, app, python) for env, app in envs if (python := env_python(env)) and has_torch(env)]
     print(f"\n{len(candidates)} environnements avec PyTorch, quelques secondes chacun :")
     working: list[str] = []
+    ok_as_is = ok_without = 0
     hinted: set[Path] = set()
     dropped = tuple(k for k in SELECT_VARS if k in os.environ)
     for i, (env, app, python) in enumerate(candidates, 1):
         print(f"\n[{i}/{len(candidates)}] {env}", flush=True)
         result, messages = probe(python)
         if describe(result, messages):
+            ok_as_is += 1
             working.append(f"{env} (PyTorch {result['torch']})")
         if dropped:
             again, again_messages = probe(python, dropped)
             print(f"      Sans {', '.join(dropped)} :", flush=True)
             if describe(again, again_messages, indent="        ", brief=True):
+                ok_without += 1
                 working.append(f"{env} (PyTorch {again['torch']}), sans {', '.join(dropped)}")
         if app and app not in hinted:
             hinted.add(app)
@@ -273,6 +276,9 @@ def main() -> None:
         print("La carte répond avec :")
         for line in working:
             print(f"  {line}")
+        if dropped and ok_without and not ok_as_is:
+            shown = ", ".join(f"{k}={os.environ[k]}" for k in dropped)
+            print(f"C'est {shown} qui masque la carte. Supprime cette variable de Windows (voir voix/README.md), puis rouvre le terminal.")
     else:
         print("Aucun de ces environnements ne voit la carte depuis ce terminal.")
         if homes:

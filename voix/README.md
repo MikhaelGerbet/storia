@@ -91,21 +91,22 @@ py -3.12 -m venv .venv-gpu
 ./.venv-gpu/Scripts/python voix/serveur_voix.py --voix-ref voix/references/conteur.wav --voix-ref-texte voix/texte-de-reference.txt
 ```
 
-- Elle finit par `False` : PyTorch ne voit toujours pas la carte (voir ci-dessous). Supprime le dossier `.venv-gpu` et reste sur le processeur.
+- Elle finit par `False` : PyTorch ne voit pas la carte, voir ci-dessous.
+
+Une version précédente de ce guide installait PyTorch pour AMD (ROCm 7.2.1) directement dans `.venv-voxcpm`. Si tu l'as fait, cette installation marche aussi, et `.venv-gpu` est inutile.
 
 ### Si PyTorch ne voit pas la carte (« Failed to get device count », « No HIP GPUs are available »)
 
-Ces messages viennent de HIP, la couche d'AMD sous PyTorch : elle ne trouve aucune carte. Sous Windows, c'est un défaut connu de HIP 7, avec le même message ([ROCm/HIP#3899](https://github.com/ROCm/HIP/issues/3899)), et ROCm 10 ne le corrige pas toujours ([TheRock#8461](https://github.com/ROCm/TheRock/issues/8461)).
-
-Si une application de Pinokio (Wan 2.2, ComfyUI…) utilise déjà ta carte, une version de PyTorch marche chez toi. Pour la retrouver :
+Lance le diagnostic. Il ne modifie rien :
 
 ```bash
 py -3.12 voix/diagnostic_gpu.py
 ```
 
-Le script interroge chaque environnement Python de Pinokio et du projet, sans rien modifier. Il dit lequel voit la carte, avec quelle version de PyTorch, et d'où elle vient. Si Pinokio n'est pas trouvé, ajoute `--pinokio` suivi de son dossier.
+Il interroge chaque environnement Python du projet et de Pinokio : version de PyTorch, carte vue ou non, origine de l'installation. Si Pinokio n'est pas trouvé, ajoute `--pinokio` suivi de son dossier.
 
-Sinon : pilote AMD Software Adrenalin à jour puis redémarrage, ou WSL2 (Linux dans Windows), où PyTorch pour cartes AMD est plus éprouvé.
+- **La carte n'apparaît que « Sans HIP_VISIBLE_DEVICES »** : cette variable de Windows la masque. `HIP_VISIBLE_DEVICES=1` sert quand la carte graphique intégrée au Ryzen est active : elle désigne alors la deuxième carte, la RX 7900 XT. Une fois la carte intégrée désactivée, il ne reste qu'une carte, numérotée 0, et la variable la cache. Supprime-la : menu Démarrer, « Modifier les variables d'environnement système », bouton « Variables d'environnement… », sélectionne `HIP_VISIBLE_DEVICES` (dans l'une des deux listes), « Supprimer », puis OK. Ferme et rouvre ensuite tes terminaux et Pinokio. Laisse la carte intégrée désactivée.
+- **Aucun environnement ne voit la carte** : mets à jour le pilote AMD Software Adrenalin et redémarre le PC. Sous Windows, HIP 7 a aussi un défaut connu qui donne ces messages ([ROCm/HIP#3899](https://github.com/ROCm/HIP/issues/3899), [TheRock#8461](https://github.com/ROCm/TheRock/issues/8461)). En dernier recours : WSL2 (Linux dans Windows).
 
 Dans tous les cas, le serveur de voix continue de fonctionner : il repasse tout seul sur le processeur.
 

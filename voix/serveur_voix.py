@@ -17,6 +17,7 @@ import hashlib
 import io
 import json
 import math
+import os
 import sys
 import tempfile
 import threading
@@ -74,6 +75,9 @@ def pick_device(choice: str, torch) -> str:
             return "cuda"
         except Exception as err:
             print(f"La carte graphique ne répond pas ({err}).")
+    hiding = [f"{k}={os.environ[k]}" for k in ("HIP_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES") if k in os.environ]
+    if hiding:
+        print(f"{', '.join(hiding)} limite les cartes que voit PyTorch, et peut masquer la tienne : vérifie avec « py -3.12 voix/diagnostic_gpu.py ».")
     if choice == "cuda":
         sys.exit("Aucune carte graphique utilisable par PyTorch : installe PyTorch pour ta carte (voir voix/README.md) ou lance avec --appareil cpu.")
     print("Pas de carte graphique utilisable par PyTorch : la voix sera générée sur le processeur, plus lentement.")
