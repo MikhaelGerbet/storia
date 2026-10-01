@@ -65,14 +65,30 @@ Réglages utiles :
 
 ### Sur la carte graphique AMD
 
-Sans rien d'autre, VoxCPM2 tourne sur le processeur : la voix met alors plus de temps à se générer qu'à s'écouter. Pour utiliser la RX 7900 XT, installe PyTorch pour cartes AMD dans le même environnement :
+Sans rien d'autre, VoxCPM2 tourne sur le processeur : environ 2 minutes par phrase. La carte graphique est bien plus rapide. Pour l'utiliser, installe dans le même environnement la version de PyTorch pour cartes AMD (ROCm 7.2.1, Python 3.12) :
 
-1. Mets à jour le pilote AMD Adrenalin.
-2. Ouvre la page officielle d'AMD, « Install PyTorch for Radeon on Windows » : <https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/windows/install-pytorch.html>
-3. Retire la version pour processeur : `./.venv-voxcpm/Scripts/python -m pip uninstall -y torch torchaudio`
-4. Lance la commande d'installation de la page AMD pour Python 3.12, en remplaçant `python` par `./.venv-voxcpm/Scripts/python`. Installe tous les fichiers proposés **en une seule commande**, sinon pip remet la version pour processeur.
+1. Mets à jour le pilote **AMD Software Adrenalin**, en version 26.2.2 ou plus récente.
+2. Remplace PyTorch par la version AMD. Les longues lignes sont voulues : chaque groupe de fichiers doit s'installer en une seule commande, sinon pip remet la version pour processeur.
 
-Au lancement, le serveur affiche alors « Carte graphique : AMD Radeon RX 7900 XT ». Si la carte ne répond pas, il le dit et repasse sur le processeur.
+```bash
+./.venv-voxcpm/Scripts/python -m pip uninstall -y torch torchaudio torchvision
+./.venv-voxcpm/Scripts/python -m pip install --no-cache-dir https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_core-7.2.1-py3-none-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_devel-7.2.1-py3-none-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_libraries_custom-7.2.1-py3-none-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm-7.2.1.tar.gz
+./.venv-voxcpm/Scripts/python -m pip install --no-cache-dir https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torch-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torchaudio-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torchvision-0.24.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl
+```
+
+3. Vérifie :
+
+```bash
+./.venv-voxcpm/Scripts/python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+La réponse attendue est `True AMD Radeon RX 7900 XT`. Relance alors le serveur : il affiche « Carte graphique : AMD Radeon RX 7900 XT ». Si la carte ne répond pas, il le dit et repasse sur le processeur.
+
+Ces commandes viennent de la page d'AMD « Install PyTorch for Radeon on Windows » : <https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/windows/install-pytorch.html>. Si AMD publie une version plus récente, reprends celle de la page.
+
+### Les messages « Badcase detected… retrying »
+
+VoxCPM2 recommence une phrase quand l'audio dure plus de N fois le texte : c'est son garde-fou contre une voix qui s'emballe. Le seuil d'origine (6) déclenche à tort sur une narration posée de conteur. Le serveur le relève à 10 ; règle-le avec `--seuil-reprise` si besoin.
 
 ## Chatterbox, l'alternative
 

@@ -155,7 +155,7 @@ class VoxCPMEngine:
 
     label = "VoxCPM2"
 
-    def __init__(self, device: str, reference: Path | None, reference_text: str | None, style: str, cfg_value: float, steps: int):
+    def __init__(self, device: str, reference: Path | None, reference_text: str | None, style: str, cfg_value: float, steps: int, badcase_ratio: float):
         try:
             import torch
             from voxcpm import VoxCPM
@@ -171,6 +171,9 @@ class VoxCPMEngine:
         self.style = style.strip()
         self.cfg_value = cfg_value
         self.steps = steps
+        # VoxCPM2 recommence une phrase quand l'audio dure plus de N fois le texte (signe d'un emballement).
+        # Une narration posée dépasse souvent 6, le seuil par défaut : on le relève pour éviter des reprises inutiles.
+        self.badcase_ratio = badcase_ratio
         self.lock = threading.Lock()
         if reference is None:
             print("Sans --voix-ref, VoxCPM2 invente une voix à chaque phrase : donne un extrait de voix française pour une voix stable.")
@@ -181,6 +184,7 @@ class VoxCPMEngine:
             "text": f"{self.style}{text}" if self.style else text,
             "cfg_value": self.cfg_value,
             "inference_timesteps": self.steps,
+            "retry_badcase_ratio_threshold": self.badcase_ratio,
         }
         if ref is not None:
             options["reference_wav_path"] = str(ref)
@@ -247,6 +251,7 @@ class Handler(BaseHTTPRequestHandler):
         reference = None
         if fields.get("voice_wav", (b"", None))[0]:
             reference = self._reference(*fields["voice_wav"])
+        print(f"… lecture de « {text[:80]} »", flush=True)
         started = time.perf_counter()
         try:
             audio = self.engine.synthesize(text, reference)
@@ -254,7 +259,10 @@ class Handler(BaseHTTPRequestHandler):
             print(f"Erreur : {err}", flush=True)
             return self._json(500, {"detail": str(err)})
         print(f"{time.perf_counter() - started:5.1f} s  {text[:80]}", flush=True)
-        self._send(200, audio, "audio/wav")
+        try:
+            self._send(200, audio, "audio/wav")
+        except (BrokenPipeError, ConnectionError):
+            print("Le générateur n'attendait plus cette phrase (connexion fermée de son côté).", flush=True)
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002 (nom imposé par http.server)
         pass  # le journal utile est affiché par do_POST
@@ -273,6 +281,7 @@ def main() -> None:
     parser.add_argument("--voix-ref-texte", type=Path, help="fichier texte : transcription exacte de l'extrait (clonage plus fidèle, VoxCPM2)")
     parser.add_argument("--style", default="", help="VoxCPM2 : consigne ajoutée devant chaque phrase, par exemple « (warm storyteller, calm and slow) »")
     parser.add_argument("--etapes", type=int, default=10, help="VoxCPM2 : étapes de génération, plus = meilleur mais plus lent (défaut 10)")
+    parser.add_argument("--seuil-reprise", type=float, default=10.0, help="VoxCPM2 : recommence une phrase si son audio dure plus de N fois le texte (défaut 10 ; 6 dans VoxCPM2)")
     parser.add_argument("--expressivite", type=float, default=0.6, help="Chatterbox : de 0.25 (neutre) à 1.0 (très expressif), défaut 0.6")
     parser.add_argument("--cfg", type=float, help="guidage. Chatterbox : 0 à 1, plus bas = débit plus posé (défaut 0.4). VoxCPM2 : défaut 2.0")
     parser.add_argument("--temperature", type=float, default=0.8, help="Chatterbox : variété d'une lecture à l'autre")
@@ -291,7 +300,7 @@ def main() -> None:
     elif args.moteur == "chatterbox":
         engine = ChatterboxEngine(args.appareil, args.voix_ref, args.expressivite, 0.4 if args.cfg is None else args.cfg, args.temperature)
     else:
-        engine = VoxCPMEngine(args.appareil, args.voix_ref, reference_text, args.style, 2.0 if args.cfg is None else args.cfg, args.etapes)
+        engine = VoxCPMEngine(args.appareil, args.voix_ref, reference_text, args.style, 2.0 if args.cfg is None else args.cfg, args.etapes, args.seuil_reprise)
     Handler.engine = engine
     Handler.cache_dir = Path(tempfile.mkdtemp(prefix="storia-voix-"))
     server = ThreadingHTTPServer((args.hote, args.port), Handler)

@@ -133,11 +133,18 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
   o.log(`2/3 ${[ttsUrls.length > 1 ? `${ttsUrls.length} voix` : ttsUrls.length && 'Voix', o.withImage && 'image'].filter(Boolean).join(' et ') || 'Rien à générer'}…`);
   const voicesTask = (async () => {
     const sets: Uint8Array[][] = [];
+    const n = scene.segments.length;
     for (const url of ttsUrls) {
       const voices: Uint8Array[] = [];
-      for (const segment of scene.segments) voices.push(await synthesize(segment.text, { url, voice: o.voice, voiceSample }));
+      for (const [i, segment] of scene.segments.entries()) {
+        const begun = performance.now();
+        const voice = await synthesize(segment.text, { url, voice: o.voice, voiceSample });
+        voices.push(voice);
+        const took = (performance.now() - begun) / 1000;
+        o.log(`    voix${ttsUrls.length > 1 ? ` ${url}` : ''} : phrase ${i + 1}/${n} lue en ${took < 60 ? `${took.toFixed(1)} s` : `${Math.floor(took / 60)} min ${Math.round(took % 60)} s`} (${wavInfo(voice).duration.toFixed(1)} s de parole)`);
+      }
       const total = voices.reduce((sum, v) => sum + wavInfo(v).duration, 0);
-      o.log(`    voix ${url} : ${total.toFixed(1)} s de parole (${elapsed()})`);
+      o.log(`    voix${ttsUrls.length > 1 ? ` ${url}` : ''} terminée : ${total.toFixed(1)} s de parole (${elapsed()})`);
       sets.push(voices);
     }
     return sets;
