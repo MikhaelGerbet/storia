@@ -161,7 +161,7 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
   let video = o.videoPath ? await readMedia(o.videoPath, 'video') : undefined;
   if (video && video.bytes.length > 60_000_000) o.log(`Attention : l'animation pèse ${Math.round(video.bytes.length / 1e6)} Mo, la page sera lourde à ouvrir.`);
   const wan = o.wan ? await findWan(o.wan.dir) : undefined;
-  if (wan) o.log(`Wan2GP ${wan.version} : ${wan.appDir}`);
+  if (wan) o.log(`Wan2GP ${wan.version} : ${wan.appDir}${wan.models.length ? ` (déjà téléchargés : ${wan.models.join(', ')})` : ''}`);
   const workflowRaw = o.withImage && !givenImage && !wan
     ? await readJsonFile(o.workflowPath, `Workflow d'image introuvable : ${o.workflowPath}. Exporte-le depuis ComfyUI (voir le README du générateur), ou lance avec --sans-image.`)
     : null;

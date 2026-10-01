@@ -13,7 +13,15 @@ export interface WanInstall {
   appDir: string;
   python: string;
   version: string;
+  /** Modèles utiles déjà téléchargés (Wan 2.2 image vers vidéo, Z-Image) : autant de gigaoctets en moins à télécharger. */
+  models: string[];
 }
+
+/** Fichiers des modèles dont on se sert, dans le dossier ckpts de Wan2GP. */
+const MODEL_FILES: [string, RegExp][] = [
+  ['Wan 2.2 image vers vidéo', /^wan2\.2_image2video_14B_/i],
+  ['Z-Image Turbo', /^ZImageTurbo/i],
+];
 
 /** `--process` sait lire un fichier de réglages .json depuis la 9.82. */
 export const MIN_VERSION = 9.82;
@@ -41,10 +49,12 @@ async function describeInstall(dir: string): Promise<WanInstall | undefined> {
   const python = pythonOf(appDir);
   if (!python) return undefined;
   const version = /WanGP_version\s*=\s*["']([\d.]+)["']/.exec(await readFile(path.join(appDir, 'wgp.py'), 'utf8'))?.[1] ?? '0';
-  return { appDir, python, version };
+  const files = await readdir(path.join(appDir, 'ckpts')).catch(() => [] as string[]);
+  const models = MODEL_FILES.filter(([, pattern]) => files.some((f) => pattern.test(f))).map(([name]) => name);
+  return { appDir, python, version, models };
 }
 
-/** Trouve Wan2GP : le dossier donné, sinon la version la plus récente parmi les applications de Pinokio. */
+/** Trouve Wan2GP : le dossier donné, sinon, parmi les applications de Pinokio, celle qui a déjà nos modèles, puis la plus récente. */
 export async function findWan(explicit?: string, homes: string[] = defaultPinokioHomes()): Promise<WanInstall> {
   const candidates: string[] = [];
   if (explicit) candidates.push(explicit);
@@ -67,12 +77,15 @@ export async function findWan(explicit?: string, homes: string[] = defaultPinoki
         : 'Wan2GP introuvable dans Pinokio. Donne son dossier avec --wan-dossier, par exemple C:/pinokio/api/wan2gp-amd.git/app.',
     );
   }
-  found.sort((a, b) => Number.parseFloat(b.version) - Number.parseFloat(a.version));
-  const best = found[0];
-  if (!(Number.parseFloat(best.version) >= MIN_VERSION)) {
-    throw new Error(`Wan2GP ${best.version} est trop ancien pour être piloté (version ${MIN_VERSION} au moins) : mets-le à jour dans Pinokio (« Update »).`);
+  const recent = (x: WanInstall) => Number.parseFloat(x.version) >= MIN_VERSION;
+  const usable = found.filter(recent);
+  if (!usable.length) {
+    const newest = found.sort((a, b) => Number.parseFloat(b.version) - Number.parseFloat(a.version))[0];
+    throw new Error(`Wan2GP ${newest.version} est trop ancien pour être piloté (version ${MIN_VERSION} au moins) : mets-le à jour dans Pinokio (« Update »).`);
   }
-  return best;
+  // Chaque installation télécharge ses propres modèles : on évite d'en retélécharger des dizaines de gigaoctets.
+  usable.sort((a, b) => b.models.length - a.models.length || Number.parseFloat(b.version) - Number.parseFloat(a.version));
+  return usable[0];
 }
 
 function defaultPinokioHomes(): string[] {

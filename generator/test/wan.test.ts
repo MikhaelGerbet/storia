@@ -48,6 +48,14 @@ test('Wan2GP est trouvé dans Pinokio, et la version la plus récente l’emport
   const found = await findWan(undefined, [recent.home]);
   assert.equal(found.appDir, recent.appDir);
   assert.equal(found.version, '13.141');
+  // Une installation plus ancienne qui a déjà Wan 2.2 passe devant : pas de dizaines de Go à retélécharger
+  await writeFile(path.join(old, 'wgp.py'), 'WanGP_version = "12.5"\n');
+  await mkdir(path.join(old, 'ckpts'));
+  await writeFile(path.join(old, 'ckpts', 'wan2.2_image2video_14B_high_quanto_mbf16_int8.safetensors'), '');
+  const withModels = await findWan(undefined, [recent.home]);
+  assert.equal(withModels.appDir, old);
+  assert.deepEqual(withModels.models, ['Wan 2.2 image vers vidéo']);
+  await writeFile(path.join(old, 'wgp.py'), 'WanGP_version = "9.9"\n');
   await writeFile(path.join(recent.appDir, 'wgp.py'), 'WanGP_version = "9.8"\n');
   await rm(old, { recursive: true });
   await assert.rejects(findWan(undefined, [recent.home]), /trop ancien/);
