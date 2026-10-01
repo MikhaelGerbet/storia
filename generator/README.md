@@ -5,7 +5,7 @@
 | Étape | Outil | Où ça tourne |
 |---|---|---|
 | Texte et choix des bruitages | Ollama, modèle `mistral-small3.2` | Carte graphique |
-| Voix | Pocket TTS (Kyutai), voix `estelle` | Processeur |
+| Voix | Chatterbox ou Pocket TTS, via un serveur de voix local (voir `voix/README.md`) | Processeur |
 | Image | ComfyUI, FLUX.2 [klein] 4B ou Z-Image Turbo | Carte graphique |
 | Lecture | Le lecteur du prototype n°1 | Navigateur |
 
@@ -17,12 +17,7 @@
    ollama pull mistral-small3.2
    ```
    Il pèse environ 15 Go et tient dans les 20 Go de la RX 7900 XT, qu'Ollama prend en charge sous Windows comme sous Linux. Plus léger : `gemma4:12b`.
-3. **Pocket TTS**, sur le port 8001 (le 8000 est celui de ComfyUI Desktop) :
-   ```bash
-   pip install pocket-tts
-   pocket-tts serve --language french --port 8001
-   ```
-   Il tourne sur le processeur et laisse la carte graphique libre. Avec `--language french_24l`, la qualité est meilleure mais la génération plus lente.
+3. **Un serveur de voix** sur le port 8001 (le 8000 est celui de ComfyUI Desktop) : Chatterbox pour une voix expressive, ou Pocket TTS pour une voix légère. L'installation de chacun est décrite dans `voix/README.md`.
 4. **ComfyUI**. Sous Windows, ComfyUI Desktop prend officiellement en charge les cartes AMD (ROCm). Sous Linux, utilise l'installation manuelle avec PyTorch pour ROCm. Ensuite :
    1. ouvre le modèle de workflow (« Templates ») FLUX.2 [klein] 4B ou Z-Image Turbo, et laisse ComfyUI télécharger les fichiers ;
    2. dans la zone du prompt positif, écris exactement `{{PROMPT}}` ;
@@ -42,7 +37,9 @@ npm run generer -- --sans-image    # tant que ComfyUI n'est pas prêt
 
 À la fin, le chemin de la page s'affiche : ouvre-la dans ton navigateur. Le dossier contient aussi la scène (`scene.json`), les voix (`voix/`), l'image et le prompt utilisé, pour comparer les essais.
 
-Toutes les options : `npm run generer -- --aide`. Si ComfyUI n'est pas sur le port 8000 (installation manuelle : 8188), ajoute `--comfy http://127.0.0.1:8188`.
+Toutes les options : `npm run generer -- --aide`.
+
+Pour réécouter le même texte avec une autre voix, reprends sa scène au lieu d'en écrire une nouvelle : `npm run generer -- --scene scenes/navire-endormi.json` (ou le `scene.json` d'un essai précédent). Avec plusieurs `--tts`, chaque voix lit le même texte et tu peux les comparer à l'aveugle : voir `voix/README.md`. Si ComfyUI n'est pas sur le port 8000 (installation manuelle : 8188), ajoute `--comfy http://127.0.0.1:8188`.
 
 ## Ce que fait la chaîne
 

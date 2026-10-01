@@ -16,6 +16,8 @@ Utilisation :
 Options :
   --age <tranche>        3-5, 6-8 (défaut), 9-12, ados ou adultes
   --idee "<texte>"       souhait de l'auditeur (par exemple dicté)
+  --scene <json>         reprend le texte d'une scène déjà écrite au lieu d'appeler Ollama
+                         (par exemple scenes/navire-endormi.json, ou le scene.json d'un essai)
   --modele <nom>         modèle Ollama (défaut : mistral-small3.2)
   --voix <nom>           voix Pocket TTS (défaut : estelle)
   --voix-fichier <wav>   extrait d'une voix à imiter, dont tu as les droits
@@ -26,7 +28,8 @@ Options :
   --graine <nombre>      graine de l'image, pour reproduire un résultat
   --sortie <dossier>     où ranger les histoires (défaut : sorties)
   --ollama <url>         défaut : http://localhost:11434
-  --tts <url>            défaut : http://localhost:8001
+  --tts <url>            serveur de voix (défaut : http://localhost:8001). Répète l'option pour
+                         comparer plusieurs voix à l'aveugle sur le même texte
   --comfy <url>          défaut : http://127.0.0.1:8000 (ComfyUI Desktop ; 8188 pour une installation manuelle)
   -h, --aide             affiche cette aide`;
 
@@ -35,6 +38,7 @@ async function main(): Promise<void> {
     options: {
       age: { type: 'string', default: '6-8' },
       idee: { type: 'string' },
+      scene: { type: 'string' },
       modele: { type: 'string', default: 'mistral-small3.2' },
       voix: { type: 'string', default: 'estelle' },
       'voix-fichier': { type: 'string' },
@@ -45,7 +49,7 @@ async function main(): Promise<void> {
       graine: { type: 'string' },
       sortie: { type: 'string', default: path.join(root, 'sorties') },
       ollama: { type: 'string', default: 'http://localhost:11434' },
-      tts: { type: 'string', default: 'http://localhost:8001' },
+      tts: { type: 'string', multiple: true, default: ['http://localhost:8001'] },
       comfy: { type: 'string', default: 'http://127.0.0.1:8000' },
       aide: { type: 'boolean', short: 'h', default: false },
     },
@@ -67,6 +71,7 @@ async function main(): Promise<void> {
   const result = await runPipeline({
     age: values.age as AgeBand,
     idea: values.idee,
+    sceneFile: values.scene === undefined ? undefined : path.resolve(values.scene),
     model: values.modele,
     voice: values.voix,
     voiceSamplePath: values['voix-fichier'],
@@ -76,13 +81,15 @@ async function main(): Promise<void> {
     outDir: path.resolve(values.sortie),
     playerPath: path.join(root, '..', 'prototype', 'intro-pirate', 'index.html'),
     ollamaUrl: trimUrl(values.ollama),
-    ttsUrl: trimUrl(values.tts),
+    ttsUrls: values.tts.map(trimUrl),
     comfyUrl: trimUrl(values.comfy),
     waterline,
     seed,
     log: (message) => console.log(message),
   });
-  console.log(`\nTerminé en ${result.seconds.toFixed(0)} s. Ouvre ce fichier dans ton navigateur :\n  ${result.htmlPath}`);
+  const pages = result.htmlPaths.map((p) => `  ${p}`).join('\n');
+  const what = result.htmlPaths.length > 1 ? 'Écoute ces pages sans regarder correspondance.txt, puis compare' : 'Ouvre ce fichier dans ton navigateur';
+  console.log(`\nTerminé en ${result.seconds.toFixed(0)} s. ${what} :\n${pages}`);
 }
 
 main().catch((err: unknown) => {

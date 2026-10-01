@@ -1,0 +1,25 @@
+{
+  "title": "Le Navire endormi",
+  "audience": "enfants (6-8 ans)",
+  "intro": 1.8,
+  "segments": [
+    { "text": "Au fond d'une grotte secrète…", "pause": 0.6 },
+    { "text": "là où la mer chante tout bas…", "pause": 0.7 },
+    { "text": "dormait un bateau pirate", "pause": 0.25 },
+    { "text": "que personne n'avait vu depuis cent ans.", "pause": 1.0 },
+    { "text": "Jusqu'à cette nuit.", "pause": 0.3 }
+  ],
+  "cues": [
+    { "at": "intro", "delay": 0, "run": "ambience" },
+    { "at": "intro", "delay": 0, "run": "dawn" },
+    { "at": "intro", "delay": 0.2, "run": "drip" },
+    { "at": 0, "when": "start", "delay": 0.9, "run": "drip" },
+    { "at": 1, "when": "start", "delay": 0.45, "run": "swell" },
+    { "at": 2, "when": "start", "delay": 0, "run": "revealShip" },
+    { "at": 2, "when": "start", "delay": 0.6, "run": "creak" },
+    { "at": 3, "when": "end", "delay": 0, "run": "drip" },
+    { "at": 4, "when": "start", "delay": 0.15, "run": "lantern" },
+    { "at": 4, "when": "end", "delay": 0.3, "run": "bell" },
+    { "at": "outro", "delay": 2.8, "run": "endCard" }
+  ]
+}

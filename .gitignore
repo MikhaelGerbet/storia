@@ -1,0 +1,6 @@
+# Environnements Python des moteurs de voix
+.venv-*/
+__pycache__/
+
+# Extraits de voix personnels : jamais sur GitHub
+voix/references/

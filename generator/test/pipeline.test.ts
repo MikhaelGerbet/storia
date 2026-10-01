@@ -27,7 +27,7 @@ function options(dir: string, url: string, extra: Partial<PipelineOptions> = {})
     outDir: dir,
     playerPath,
     ollamaUrl: url,
-    ttsUrl: url,
+    ttsUrls: [url],
     comfyUrl: url,
     waterline: 0.62,
     log: () => {},
@@ -75,7 +75,7 @@ test('la chaîne complète produit une histoire jouable', async (t) => {
   assert.equal(wav.readUInt32LE(40), wav.length - 44);
   assert.ok(Math.abs(wavInfo(wav).duration - 0.6) < 0.01);
   // Page : histoire intégrée
-  const html = await readFile(result.htmlPath, 'utf8');
+  const html = await readFile(result.htmlPaths[0], 'utf8');
   const pkg = packageOf(html);
   assert.equal(pkg.voices.length, 6);
   assert.match(pkg.image, /^data:image\/png;base64,/);
@@ -92,7 +92,7 @@ test('sans voix ni image, la page garde la voix du navigateur et l’illustratio
   assert.equal(mock.calls.prompts.length, 0);
   assert.equal(mock.calls.unload.length, 0);
   assert.deepEqual((await readdir(result.folder)).sort(), ['index.html', 'prompt-image.txt', 'scene.json']);
-  const pkg = packageOf(await readFile(result.htmlPath, 'utf8'));
+  const pkg = packageOf(await readFile(result.htmlPaths[0], 'utf8'));
   assert.equal(pkg.voices, undefined);
   assert.equal(pkg.image, undefined);
   assert.match(pkg.credits, /celle du navigateur/);
@@ -102,4 +102,38 @@ test('messages clairs quand un service manque', async (t) => {
   const dir = await tempDir(t);
   await assert.rejects(runPipeline(options(dir, 'http://127.0.0.1:9', { withImage: false })), /Ollama ne répond pas/);
   await assert.rejects(runPipeline(options(dir, 'http://127.0.0.1:9')), /Workflow d'image introuvable/);
+});
+
+test('une scène reprise est relue par plusieurs voix, comparées à l’aveugle', async (t) => {
+  const voiceA = await startMockServices({ draft: SAMPLE_DRAFT, wavSeconds: () => 0.5 });
+  const voiceB = await startMockServices({ draft: SAMPLE_DRAFT, wavSeconds: () => 0.9 });
+  t.after(async () => {
+    await voiceA.close();
+    await voiceB.close();
+  });
+  const dir = await tempDir(t);
+  const sceneFile = path.resolve(import.meta.dirname, '..', 'scenes', 'navire-endormi.json');
+  const result = await runPipeline(
+    options(dir, 'http://127.0.0.1:9', { sceneFile, withImage: false, ttsUrls: [voiceA.url, voiceB.url] }),
+  );
+  // Ollama n'est pas appelé (son adresse est fermée) : le texte vient du fichier
+  assert.equal(result.scene.title, 'Le Navire endormi');
+  for (const mock of [voiceA, voiceB]) assert.deepEqual(mock.calls.tts, result.scene.segments.map((s) => s.text));
+  const files = (await readdir(result.folder)).sort();
+  assert.deepEqual(files, ['correspondance.txt', 'prompt-image.txt', 'scene.json', 'voix', 'voix-A.html', 'voix-B.html']);
+  const mapping = await readFile(path.join(result.folder, 'correspondance.txt'), 'utf8');
+  assert.deepEqual(mapping.trim().split('\n').map((l) => l.split(' : ')[1]).sort(), [voiceA.url, voiceB.url].sort());
+  for (const letter of ['A', 'B']) {
+    const pkg = packageOf(await readFile(path.join(result.folder, `voix-${letter}.html`), 'utf8'));
+    assert.equal(pkg.voices.length, 5);
+    assert.match(pkg.credits, new RegExp(`voix ${letter}`));
+    assert.doesNotMatch(pkg.credits, /127\.0\.0\.1/); // la page ne révèle pas le moteur
+  }
+});
+
+test('une scène mal formée est refusée avec un message clair', async (t) => {
+  const dir = await tempDir(t);
+  const bad = path.join(dir, 'mauvaise.json');
+  await writeFile(bad, JSON.stringify({ titre: 'pas une scène' }));
+  await assert.rejects(runPipeline(options(dir, 'http://127.0.0.1:9', { sceneFile: bad, withImage: false })), /forme d'une scène/);
 });
