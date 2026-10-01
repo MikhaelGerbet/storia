@@ -53,7 +53,7 @@ Lancement :
 ./.venv-voxcpm/Scripts/python voix/serveur_voix.py --voix-ref voix/references/conteur.wav --voix-ref-texte voix/texte-de-reference.txt
 ```
 
-Au premier lancement, les poids du modèle se téléchargent (quelques gigaoctets). Le générateur l'utilise ensuite sans option supplémentaire.
+Au premier lancement, les poids du modèle se téléchargent (quelques gigaoctets). Attends « Voix prête » : le générateur l'utilise ensuite sans option supplémentaire. Ctrl+C l'arrête, et la même commande le relance.
 
 Réglages utiles :
 
@@ -65,31 +65,41 @@ Réglages utiles :
 
 ### Sur la carte graphique AMD
 
-Sans rien d'autre, VoxCPM2 tourne sur le processeur : environ 2 minutes par phrase. La carte graphique est bien plus rapide. Pour l'utiliser, installe dans le même environnement la version de PyTorch pour cartes AMD (ROCm 7.2.1, Python 3.12) :
+Sans rien d'autre, VoxCPM2 tourne sur le processeur : environ 2 minutes par phrase. La carte graphique est bien plus rapide, mais PyTorch pour cartes AMD est encore jeune sous Windows. On l'essaie donc dans un environnement à part, `.venv-gpu` : si la carte n'y répond pas, tu supprimes ce dossier, et ton installation qui marche n'a pas bougé. Tu peux l'installer pendant que l'autre serveur tourne.
 
-1. Mets à jour le pilote **AMD Software Adrenalin**, en version 26.2.2 ou plus récente.
-2. Remplace PyTorch par la version AMD. Les longues lignes sont voulues : chaque groupe de fichiers doit s'installer en une seule commande, sinon pip remet la version pour processeur.
+1. Mets à jour le pilote **AMD Software Adrenalin**, puis redémarre le PC.
+2. Installe PyTorch pour ta carte (ROCm 10, environ 1,1 Go à télécharger) :
 
 ```bash
-./.venv-voxcpm/Scripts/python -m pip uninstall -y torch torchaudio torchvision
-./.venv-voxcpm/Scripts/python -m pip install --no-cache-dir https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_core-7.2.1-py3-none-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_devel-7.2.1-py3-none-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_libraries_custom-7.2.1-py3-none-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm-7.2.1.tar.gz
-./.venv-voxcpm/Scripts/python -m pip install --no-cache-dir https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torch-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torchaudio-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torchvision-0.24.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl
+py -3.12 -m venv .venv-gpu
+./.venv-gpu/Scripts/python -m pip install --upgrade pip
+./.venv-gpu/Scripts/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ "torch[device-gfx1100]" "torchvision[device-gfx1100]" torchaudio
 ```
+
+`gfx1100` désigne les RX 7900 XT et XTX. Pour une autre carte, cherche son code dans le tableau « Supported Python [device-*] install extras » de <https://github.com/ROCm/TheRock/blob/main/RELEASES.md>, d'où vient cette commande.
 
 3. Vérifie :
 
 ```bash
-./.venv-voxcpm/Scripts/python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+./.venv-gpu/Scripts/python -c "import platform, torch; print(platform.platform(), torch.__version__, torch.cuda.is_available())"
 ```
 
-La réponse attendue est `True AMD Radeon RX 7900 XT`. Relance alors le serveur : il affiche « Carte graphique : AMD Radeon RX 7900 XT ». Si la carte ne répond pas, il le dit et repasse sur le processeur.
+- La ligne finit par `True` : la carte répond. Installe VoxCPM2 dans cet environnement, arrête l'ancien serveur (Ctrl+C), puis lance celui-ci. Il affiche « Carte graphique : AMD Radeon RX 7900 XT ».
 
-Ces commandes viennent de la page d'AMD « Install PyTorch for Radeon on Windows » : <https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/windows/install-pytorch.html>. Si AMD publie une version plus récente, reprends celle de la page.
+```bash
+./.venv-gpu/Scripts/python -m pip install voxcpm
+./.venv-gpu/Scripts/python voix/serveur_voix.py --voix-ref voix/references/conteur.wav --voix-ref-texte voix/texte-de-reference.txt
+```
 
-### Si PyTorch ne voit pas la carte (« No HIP GPUs are available »)
+- Elle finit par `False` : PyTorch ne voit toujours pas la carte (voir ci-dessous). Supprime le dossier `.venv-gpu` et reste sur le processeur.
 
-1. Presque toujours, le pilote est trop ancien. Ouvre AMD Software: Adrenalin Edition, lance « Rechercher des mises à jour » (version 26.2.2 au minimum), installe, puis **redémarre le PC**.
-2. Si le message persiste, désactive le petit processeur graphique intégré au Ryzen (Gestionnaire de périphériques, « Cartes graphiques », « AMD Radeon(TM) Graphics », Désactiver), puis réessaie.
+### Si PyTorch ne voit pas la carte (« Failed to get device count », « No HIP GPUs are available »)
+
+Ces messages viennent de HIP, la couche d'AMD sous PyTorch : elle ne trouve aucune carte. Sous Windows, c'est un défaut connu des versions 7 de HIP, avec le même message ([ROCm/HIP#3899](https://github.com/ROCm/HIP/issues/3899)).
+
+1. Pilote AMD Software Adrenalin à jour, puis redémarrage.
+2. L'installation ROCm 10 ci-dessus, plus récente que ROCm 7.
+3. En dernier recours, WSL2 (Linux dans Windows), où PyTorch pour cartes AMD est plus éprouvé.
 
 Dans tous les cas, le serveur de voix continue de fonctionner : il repasse tout seul sur le processeur.
 
