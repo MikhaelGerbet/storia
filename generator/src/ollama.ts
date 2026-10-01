@@ -34,6 +34,7 @@ Ton : ${p.tone}
 - Le dernier segment est une accroche courte qui donne envie d'entendre la suite.
 - Aucun personnage existant (films, dessins animés, jeux, livres) : uniquement des inventions.
 - Ponctuation soignée : « … » pour une pause qui suspend, « . » pour une pause franche.
+- Écris les nombres en toutes lettres (« cent ans », jamais « 100 ans ») et aucune abréviation : la voix lit exactement ce qui est écrit.
 
 Bruitages : pour chaque segment, choisis au plus un effet, sinon « aucun » :
 - goutte : une goutte tombe dans l'eau, juste après le segment

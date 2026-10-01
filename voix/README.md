@@ -1,63 +1,97 @@
 # Voix
 
-Le générateur envoie chaque phrase à un **serveur de voix** local (port 8001 par défaut). Tous les moteurs parlent le même langage : on change de voix en changeant de serveur, sans toucher au générateur.
+Le générateur envoie chaque phrase à un **serveur de voix** local (port 8001). Tous les moteurs parlent le même langage : on change de voix en changeant de moteur, sans toucher au générateur.
 
-| Moteur | Licence | Points forts | Limites |
+## Quel moteur ?
+
+Un test d'écoute à l'aveugle en français, avec 12 auditeurs et des voix de narration, a comparé les modèles open source en 2026 ([benchmark-tts](https://github.com/chvalois/benchmark-tts)). Sa note de naturel, sur 5, est le meilleur indicateur disponible :
+
+| Moteur | Naturel | Licence | Sur ton PC |
 |---|---|---|---|
-| **Chatterbox Multilingual V3** (Resemble AI) | MIT : usage commercial possible | Expressif, expressivité réglable, imite une voix à partir de 10 à 20 secondes, filigrane inaudible sur chaque son (marquage IA) | Plus lent sur le processeur |
-| **Pocket TTS** (Kyutai) | Code MIT, poids CC-BY 4.0 | Léger et rapide, même sur le processeur | Peu expressif |
+| ElevenLabs v3 (payant, pour référence) | 4,22 | Propriétaire | En ligne seulement |
+| **FireRedTTS3** | **4,11** | Apache 2.0 | Carte graphique seulement (environ 17 Go). Installation délicate sous Windows avec une carte AMD : prochaine étape, si tu le valides à l'écoute. |
+| **VoxCPM2** | 3,19 | Apache 2.0 | **Intégré.** Processeur ou carte graphique (environ 10 Go). Style réglable. À essayer en premier. |
+| Chatterbox V3 | 3,00 | MIT | Intégré. Processeur ou carte graphique (environ 6,5 Go). Un accent a été relevé par les auditeurs. |
+| Pocket TTS | Non classé | Code MIT, poids CC-BY 4.0 | Processeur. Léger mais peu expressif. |
 
-Toutes les commandes se tapent dans PowerShell, depuis le dossier du projet (`cd $HOME\Documents\storia`). Chaque moteur a son propre environnement Python, dans un dossier `.venv-…`, pour éviter les conflits de versions.
+FireRedTTS3 se détache nettement. Entre VoxCPM2 et Chatterbox, l'écart reste dans la marge d'erreur du test.
 
-## Chatterbox : la voix expressive
+## Écouter avant d'installer
 
-Installation, une seule fois (Git doit être installé) :
+- FireRedTTS3 : extraits sur <https://fireredteam.github.io/demos/firered_tts_3/>
+- VoxCPM2 : démo en ligne sur <https://huggingface.co/spaces/OpenBMB/VoxCPM-Demo> (tape ton texte en français, et tu peux y déposer un extrait de voix)
+- Chatterbox : démo en ligne sur <https://huggingface.co/spaces/ResembleAI/Chatterbox-Multilingual-TTS>
+
+Pour comparer, fais lire les phrases de l'intro : « Au fond d'une grotte secrète… là où la mer chante tout bas… dormait un bateau pirate que personne n'avait vu depuis cent ans. Jusqu'à cette nuit. »
+
+## Enregistrer la voix du conteur
+
+Les moteurs imitent la voix d'un court extrait. Sans extrait, la voix change d'une phrase à l'autre (VoxCPM2) ou garde un accent anglais (Chatterbox).
+
+1. Crée le dossier : `mkdir voix\references`. Il n'est jamais envoyé sur GitHub.
+2. Dans l'Enregistreur audio de Windows, choisis le format WAV dans les paramètres.
+3. Lis le texte de `voix\texte-de-reference.txt`, environ 25 secondes, comme si tu le racontais à un enfant : posé, chaleureux, avec la question et la réponse murmurée. Pièce calme, micro à 20 ou 30 cm, sans musique.
+4. Coupe les blancs au début et à la fin, puis enregistre sous `voix\references\conteur.wav`.
+
+Ce texte est original, et sa transcription exacte est fournie, ce qui rend le clonage plus fidèle. Évite les textes célèbres (poèmes, chansons) : le modèle a tendance à les continuer au lieu de lire ta phrase. N'utilise jamais la voix de quelqu'un sans son accord.
+
+Toutes les commandes suivantes se tapent dans PowerShell, depuis le dossier du projet (`cd $HOME\Documents\storia`). Chaque moteur a son propre environnement Python (dossier `.venv-…`), pour éviter les conflits de versions.
+
+## VoxCPM2, le moteur par défaut
+
+Installation, une seule fois :
 
 ```powershell
-py -3.12 -m venv .venv-chatterbox
-.\.venv-chatterbox\Scripts\python -m pip install --upgrade pip
-.\.venv-chatterbox\Scripts\python -m pip install git+https://github.com/resemble-ai/chatterbox.git
+py -3.12 -m venv .venv-voxcpm
+.\.venv-voxcpm\Scripts\python -m pip install --upgrade pip
+.\.venv-voxcpm\Scripts\python -m pip install voxcpm
 ```
 
 Lancement :
 
 ```powershell
-.\.venv-chatterbox\Scripts\python voix\serveur_voix.py --voix-ref voix\references\conteur.wav
+.\.venv-voxcpm\Scripts\python voix\serveur_voix.py --voix-ref voix\references\conteur.wav --voix-ref-texte voix\texte-de-reference.txt
 ```
 
-Au premier lancement, les poids du modèle se téléchargent (quelques gigaoctets). Ensuite, le générateur l'utilise sans option supplémentaire.
+Au premier lancement, les poids du modèle se téléchargent (quelques gigaoctets). Le générateur l'utilise ensuite sans option supplémentaire.
 
-### La voix de référence
+Réglages utiles :
 
-Chatterbox imite la voix d'un court extrait. Sans extrait, il prend sa voix intégrée, qui est anglaise, et le français garde un accent : **fournis un extrait français**.
+| Option | Effet |
+|---|---|
+| `--style "(warm storyteller, calm and slow)"` | Consigne de ton ajoutée devant chaque phrase. Essaie aussi « (soft, mysterious whisper) ». |
+| `--etapes 16` | Meilleure qualité, plus lent (défaut 10) |
+| `--cfg 2.5` | Suit plus fidèlement la voix et le style (défaut 2.0) |
 
-- 10 à 20 secondes de parole claire, sans musique ni bruit de fond, avec le ton voulu : un conteur chaleureux et posé.
-- Le plus simple est ta propre voix. L'Enregistreur audio de Windows convient : dans ses paramètres, choisis le format WAV ou MP3. Lis un passage d'histoire comme tu le raconterais à un enfant.
-- Range le fichier dans `voix\references\` (crée-le avec `mkdir voix\references`). Ce dossier n'est jamais envoyé sur GitHub.
-- N'utilise jamais la voix de quelqu'un sans son accord.
+### Sur la carte graphique AMD
 
-### Réglages
+Sans rien d'autre, VoxCPM2 tourne sur le processeur : la voix met alors plus de temps à se générer qu'à s'écouter. Pour utiliser la RX 7900 XT, installe PyTorch pour cartes AMD dans le même environnement :
 
-| Option | Effet | Défaut |
-|---|---|---|
-| `--expressivite` | De 0.25 (neutre) à 1.0 (très théâtral) | 0.6 |
-| `--cfg` | Plus bas, débit plus posé ; à 0, l'accent de l'extrait compte moins | 0.4 |
-| `--temperature` | Variété d'une lecture à l'autre | 0.8 |
-| `--port` | Port du serveur | 8001 |
+1. Mets à jour le pilote AMD Adrenalin.
+2. Ouvre la page officielle d'AMD, « Install PyTorch for Radeon on Windows » : <https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/windows/install-pytorch.html>
+3. Retire la version pour processeur : `.\.venv-voxcpm\Scripts\python -m pip uninstall -y torch torchaudio`
+4. Lance la commande d'installation de la page AMD pour Python 3.12, en remplaçant `python` par `.\.venv-voxcpm\Scripts\python`. Installe tous les fichiers proposés **en une seule commande**, sinon pip remet la version pour processeur.
 
-Pour un conte lu de façon plus vivante : `--expressivite 0.7 --cfg 0.3`.
+Au lancement, le serveur affiche alors « Carte graphique : AMD Radeon RX 7900 XT ». Si la carte ne répond pas, il le dit et repasse sur le processeur.
 
-Sur le processeur, générer la voix prend plus de temps que de l'écouter. C'est suffisant pour comparer les voix et préparer des histoires à l'avance. Pour la lecture en direct, il faudra passer par la carte graphique : ce sera l'étape suivante, une fois la voix choisie.
+## Chatterbox, l'alternative
 
-## Pocket TTS : la voix légère
+```powershell
+py -3.12 -m venv .venv-chatterbox
+.\.venv-chatterbox\Scripts\python -m pip install --upgrade pip
+.\.venv-chatterbox\Scripts\python -m pip install git+https://github.com/resemble-ai/chatterbox.git
+.\.venv-chatterbox\Scripts\python voix\serveur_voix.py --moteur chatterbox --voix-ref voix\references\conteur.wav
+```
+
+Réglages : `--expressivite` de 0.25 (neutre) à 1.0 (théâtral), 0.6 par défaut ; `--cfg` plus bas pour un débit plus posé, 0.4 par défaut. Chatterbox impose PyTorch 2.6 : il reste sur le processeur sous Windows.
+
+## Pocket TTS, la voix légère
 
 ```powershell
 py -3.12 -m venv .venv-pocket
 .\.venv-pocket\Scripts\python -m pip install pocket-tts
 .\.venv-pocket\Scripts\pocket-tts serve --language french --port 8001
 ```
-
-Avec `--language french_24l`, la qualité est meilleure mais la génération plus lente.
 
 ## Vérifier l'installation sans modèle
 
@@ -69,10 +103,10 @@ Le serveur répond par un simple son, de la durée du texte. Pratique pour véri
 
 ## Comparer des voix à l'aveugle
 
-Lance deux moteurs sur deux ports, par exemple Chatterbox sur 8001 et Pocket TTS sur 8002. Puis, dans `generator` :
+Lance deux moteurs sur deux ports, par exemple VoxCPM2 sur 8001 et Chatterbox avec `--port 8002`. Puis, dans `generator` :
 
 ```powershell
 npm run generer -- --scene scenes/navire-endormi.json --sans-image --tts http://localhost:8001 --tts http://localhost:8002
 ```
 
-Le même texte est lu par chaque voix. Tu obtiens une page par voix (`voix-A.html`, `voix-B.html`), dont les lettres sont tirées au sort. Écoute-les, choisis, et seulement ensuite ouvre `correspondance.txt` pour savoir quel moteur se cache derrière chaque lettre.
+Chaque voix lit le même texte. Tu obtiens une page par voix (`voix-A.html`, `voix-B.html`), avec des lettres tirées au sort. Écoute, choisis, et seulement ensuite ouvre `correspondance.txt` pour savoir quel moteur se cache derrière chaque lettre.

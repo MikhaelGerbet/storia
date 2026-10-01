@@ -6,7 +6,8 @@ Il parle le même langage que Pocket TTS : POST /tts avec un formulaire multipar
 donc de moteur sans changer de code : il suffit de changer d'adresse (--tts).
 
 Exemples :
-  python serveur_voix.py --moteur chatterbox --voix-ref conteur.wav
+  python serveur_voix.py --voix-ref references/conteur.wav --voix-ref-texte texte-de-reference.txt
+  python serveur_voix.py --moteur chatterbox --voix-ref references/conteur.wav
   python serveur_voix.py --moteur test     (son de test, pour vérifier l'installation)
 """
 from __future__ import annotations
@@ -62,6 +63,23 @@ def parse_form(content_type: str, body: bytes) -> dict[str, tuple[bytes, str | N
     return fields
 
 
+def pick_device(choice: str, torch) -> str:
+    """Carte graphique si elle répond vraiment (« cuda » désigne aussi une carte AMD avec PyTorch ROCm), sinon processeur."""
+    if choice == "cpu":
+        return "cpu"
+    if torch.cuda.is_available():
+        try:
+            (torch.ones(2, device="cuda") * 2).sum().item()  # vrai calcul : is_available() peut mentir
+            print(f"Carte graphique : {torch.cuda.get_device_name(0)}")
+            return "cuda"
+        except Exception as err:
+            print(f"La carte graphique ne répond pas ({err}).")
+    if choice == "cuda":
+        sys.exit("Aucune carte graphique utilisable par PyTorch : installe PyTorch pour ta carte (voir voix/README.md) ou lance avec --appareil cpu.")
+    print("Pas de carte graphique utilisable par PyTorch : la voix sera générée sur le processeur, plus lentement.")
+    return "cpu"
+
+
 class TestEngine:
     """Un son doux de la durée du texte, pour vérifier l'installation sans modèle."""
 
@@ -91,8 +109,7 @@ class ChatterboxEngine:
                 "Chatterbox n'est pas installé dans cet environnement Python.\n"
                 "Voir voix/README.md : pip install git+https://github.com/resemble-ai/chatterbox.git"
             )
-        if device == "auto":
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = pick_device(device, torch)
         print(f"Chargement de Chatterbox V3 sur « {device} ». Au premier lancement, les poids du modèle se téléchargent.")
         self.model = ChatterboxMultilingualTTS.from_pretrained(device=device, t3_model="v3")
         self.sample_rate = self.model.sr
@@ -133,9 +150,52 @@ class ChatterboxEngine:
         return wav_bytes(audio.squeeze(0).detach().cpu().numpy(), self.sample_rate)
 
 
+class VoxCPMEngine:
+    """VoxCPM2 (OpenBMB, licence Apache 2.0) : 48 kHz, style réglable par une consigne entre parenthèses."""
+
+    label = "VoxCPM2"
+
+    def __init__(self, device: str, reference: Path | None, reference_text: str | None, style: str, cfg_value: float, steps: int):
+        try:
+            import torch
+            from voxcpm import VoxCPM
+        except ImportError:
+            sys.exit("VoxCPM2 n'est pas installé dans cet environnement Python.\nVoir voix/README.md : pip install voxcpm")
+        device = pick_device(device, torch)
+        print(f"Chargement de VoxCPM2 sur « {device} ». Au premier lancement, les poids du modèle se téléchargent.")
+        # Pas de torch.compile ni de débruiteur : deux sources de pannes sous Windows, inutiles ici.
+        self.model = VoxCPM.from_pretrained("openbmb/VoxCPM2", load_denoiser=False, optimize=False, device=device)
+        self.sample_rate = self.model.tts_model.sample_rate
+        self.default_reference = reference
+        self.reference_text = reference_text
+        self.style = style.strip()
+        self.cfg_value = cfg_value
+        self.steps = steps
+        self.lock = threading.Lock()
+        if reference is None:
+            print("Sans --voix-ref, VoxCPM2 invente une voix à chaque phrase : donne un extrait de voix française pour une voix stable.")
+
+    def synthesize(self, text: str, reference: Path | None) -> bytes:
+        ref = reference or self.default_reference
+        options: dict = {
+            "text": f"{self.style}{text}" if self.style else text,
+            "cfg_value": self.cfg_value,
+            "inference_timesteps": self.steps,
+        }
+        if ref is not None:
+            options["reference_wav_path"] = str(ref)
+            if ref == self.default_reference and self.reference_text:
+                # Clonage le plus fidèle : l'extrait et sa transcription exacte servent d'amorce.
+                options["prompt_wav_path"] = str(ref)
+                options["prompt_text"] = self.reference_text
+        with self.lock:
+            audio = self.model.generate(**options)
+        return wav_bytes(audio, self.sample_rate)
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "StoriaVoix/1.0"
-    engine: TestEngine | ChatterboxEngine
+    engine: TestEngine | ChatterboxEngine | VoxCPMEngine
     cache_dir: Path
 
     def _send(self, status: int, body: bytes, content_type: str) -> None:
@@ -202,22 +262,32 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Serveur de voix local pour le générateur Storia.")
-    parser.add_argument("--moteur", choices=["chatterbox", "test"], default="chatterbox")
+    parser.add_argument("--moteur", choices=["voxcpm", "chatterbox", "test"], default="voxcpm")
     parser.add_argument("--port", type=int, default=8001)
     parser.add_argument("--hote", default="127.0.0.1")
     parser.add_argument("--voix-ref", type=Path, help="extrait WAV ou MP3 (10 à 20 s) d'une voix française dont tu as les droits")
-    parser.add_argument("--expressivite", type=float, default=0.6, help="de 0.25 (neutre) à 1.0 (très expressif), défaut 0.6")
-    parser.add_argument("--cfg", type=float, default=0.4, help="guidage : plus bas, débit plus posé (défaut 0.4)")
-    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--voix-ref-texte", type=Path, help="fichier texte : transcription exacte de l'extrait (clonage plus fidèle, VoxCPM2)")
+    parser.add_argument("--style", default="", help="VoxCPM2 : consigne ajoutée devant chaque phrase, par exemple « (warm storyteller, calm and slow) »")
+    parser.add_argument("--etapes", type=int, default=10, help="VoxCPM2 : étapes de génération, plus = meilleur mais plus lent (défaut 10)")
+    parser.add_argument("--expressivite", type=float, default=0.6, help="Chatterbox : de 0.25 (neutre) à 1.0 (très expressif), défaut 0.6")
+    parser.add_argument("--cfg", type=float, help="guidage. Chatterbox : 0 à 1, plus bas = débit plus posé (défaut 0.4). VoxCPM2 : défaut 2.0")
+    parser.add_argument("--temperature", type=float, default=0.8, help="Chatterbox : variété d'une lecture à l'autre")
     parser.add_argument("--appareil", choices=["auto", "cpu", "cuda"], default="auto", help="« cuda » désigne aussi une carte AMD avec PyTorch ROCm")
     args = parser.parse_args()
     if args.voix_ref is not None and not args.voix_ref.is_file():
         sys.exit(f"Extrait de voix introuvable : {args.voix_ref}")
+    reference_text = None
+    if args.voix_ref_texte is not None:
+        if not args.voix_ref_texte.is_file():
+            sys.exit(f"Transcription introuvable : {args.voix_ref_texte}")
+        reference_text = " ".join(args.voix_ref_texte.read_text(encoding="utf-8").split())
 
     if args.moteur == "test":
-        engine: TestEngine | ChatterboxEngine = TestEngine()
+        engine: TestEngine | ChatterboxEngine | VoxCPMEngine = TestEngine()
+    elif args.moteur == "chatterbox":
+        engine = ChatterboxEngine(args.appareil, args.voix_ref, args.expressivite, 0.4 if args.cfg is None else args.cfg, args.temperature)
     else:
-        engine = ChatterboxEngine(args.appareil, args.voix_ref, args.expressivite, args.cfg, args.temperature)
+        engine = VoxCPMEngine(args.appareil, args.voix_ref, reference_text, args.style, 2.0 if args.cfg is None else args.cfg, args.etapes)
     Handler.engine = engine
     Handler.cache_dir = Path(tempfile.mkdtemp(prefix="storia-voix-"))
     server = ThreadingHTTPServer((args.hote, args.port), Handler)

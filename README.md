@@ -7,13 +7,16 @@ Des histoires à écouter, générées par IA. On choisit un thème (pirates, es
 | Dossier | Contenu |
 |---|---|
 | `prototype/intro-pirate/` | Prototype n°1 : le lecteur. 15 secondes d'intro pour juger l'expérience (voix, sons, animation). Ouvrir `index.html`. |
-| `generator/` | Prototype n°2 : génère l'intro de bout en bout sur le PC (texte avec Ollama, voix avec Pocket TTS, image avec ComfyUI) et l'assemble dans une page jouable. Voir son README. |
+| `generator/` | Prototype n°2 : génère l'intro de bout en bout sur le PC (texte avec Ollama, voix, image avec ComfyUI) et l'assemble dans une page jouable. Voir son README. |
+| `voix/` | Serveur de voix local (VoxCPM2, Chatterbox) et guide pour choisir et enregistrer la voix du conteur. |
+| `docs/demarrer-sous-windows.md` | Installation pas à pas sous Windows. |
 
 ## Décisions prises
 
 - **Projet personnel, peut-être public plus tard.** On choisit dès maintenant des modèles et des sons dont la licence permet un usage commercial, pour ne rien refaire.
 - **Budget 0 € au départ** : tout tourne sur le PC, avec les quotas gratuits des services en appoint.
-- **Matériel** : Ryzen 7 7700X, 128 Go de RAM, Radeon RX 7900 XT (20 Go). Texte et images sur la carte graphique (Ollama et ComfyUI, via ROCm), voix sur le processeur (Pocket TTS).
+- **Matériel** : Ryzen 7 7700X, 128 Go de RAM, Radeon RX 7900 XT (20 Go), Windows. Texte et images sur la carte graphique (Ollama et ComfyUI, via ROCm).
+- **Voix** : la voix de synthèse du navigateur est jugée « horrible » ; il faut un modèle spécialisé. D'après un test d'écoute à l'aveugle en français, FireRedTTS3 est le meilleur modèle open source (presque au niveau d'ElevenLabs), devant VoxCPM2 et Chatterbox. VoxCPM2 est intégré par défaut car il est simple à installer ; FireRedTTS3 est la cible si l'écoute le confirme.
 - **V1 tous publics**, avec des niveaux d'âge (enfants, ados, adultes) qui pilotent le texte, la voix, les sons et les images.
 - **Pas d'IA Google** (API Gemini, Vertex AI, Gemini Nano) : leurs conditions interdisent les services susceptibles d'être utilisés par des moins de 18 ans. Restent possibles, avec des garde-fous : Mistral, OpenAI, Anthropic, Cloudflare Workers AI et les modèles libres en local.
 - **Cible technique** : application Flutter (Android d'abord) et serveur TypeScript. Les prototypes sont en web pour aller vite.

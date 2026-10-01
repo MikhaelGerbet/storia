@@ -5,7 +5,7 @@
 | Étape | Outil | Où ça tourne |
 |---|---|---|
 | Texte et choix des bruitages | Ollama, modèle `mistral-small3.2` | Carte graphique |
-| Voix | Chatterbox ou Pocket TTS, via un serveur de voix local (voir `voix/README.md`) | Processeur |
+| Voix | VoxCPM2 (ou Chatterbox, Pocket TTS) via un serveur de voix local : voir `voix/README.md` | Carte graphique ou processeur |
 | Image | ComfyUI, FLUX.2 [klein] 4B ou Z-Image Turbo | Carte graphique |
 | Lecture | Le lecteur du prototype n°1 | Navigateur |
 
@@ -17,7 +17,7 @@
    ollama pull mistral-small3.2
    ```
    Il pèse environ 15 Go et tient dans les 20 Go de la RX 7900 XT, qu'Ollama prend en charge sous Windows comme sous Linux. Plus léger : `gemma4:12b`.
-3. **Un serveur de voix** sur le port 8001 (le 8000 est celui de ComfyUI Desktop) : Chatterbox pour une voix expressive, ou Pocket TTS pour une voix légère. L'installation de chacun est décrite dans `voix/README.md`.
+3. **Un serveur de voix** sur le port 8001 (le 8000 est celui de ComfyUI Desktop) : VoxCPM2 par défaut, ou Chatterbox, ou Pocket TTS. L'installation de chacun est décrite dans `voix/README.md`.
 4. **ComfyUI**. Sous Windows, ComfyUI Desktop prend officiellement en charge les cartes AMD (ROCm). Sous Linux, utilise l'installation manuelle avec PyTorch pour ROCm. Ensuite :
    1. ouvre le modèle de workflow (« Templates ») FLUX.2 [klein] 4B ou Z-Image Turbo, et laisse ComfyUI télécharger les fichiers ;
    2. dans la zone du prompt positif, écris exactement `{{PROMPT}}` ;

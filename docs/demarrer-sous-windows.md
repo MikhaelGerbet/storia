@@ -51,8 +51,10 @@ ollama pull mistral-small3.2
 
 Deux moteurs au choix, chacun dans son propre environnement Python (dossier `.venv-…` dans le projet). Un seul tourne sur le port 8001 à la fois ; le guide de chacun est dans `voix/README.md`.
 
-- **Chatterbox** : expressif, il imite une voix à partir d'un extrait de 10 à 20 secondes. C'est celui à essayer en premier.
-- **Pocket TTS** : léger et rapide, mais peu expressif.
+- **VoxCPM2** : le moteur par défaut. Il imite la voix d'un extrait de 25 secondes (ta voix de conteur), et son style se règle. C'est celui à installer en premier.
+- **Chatterbox** et **Pocket TTS** : des alternatives.
+
+Avant d'installer quoi que ce soit, écoute les démos en ligne listées dans `voix/README.md`. Commence par enregistrer ta voix de conteur, comme expliqué au même endroit.
 
 ### Image : ComfyUI Desktop
 
