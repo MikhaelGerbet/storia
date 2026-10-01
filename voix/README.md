@@ -95,11 +95,17 @@ py -3.12 -m venv .venv-gpu
 
 ### Si PyTorch ne voit pas la carte (« Failed to get device count », « No HIP GPUs are available »)
 
-Ces messages viennent de HIP, la couche d'AMD sous PyTorch : elle ne trouve aucune carte. Sous Windows, c'est un défaut connu des versions 7 de HIP, avec le même message ([ROCm/HIP#3899](https://github.com/ROCm/HIP/issues/3899)).
+Ces messages viennent de HIP, la couche d'AMD sous PyTorch : elle ne trouve aucune carte. Sous Windows, c'est un défaut connu de HIP 7, avec le même message ([ROCm/HIP#3899](https://github.com/ROCm/HIP/issues/3899)), et ROCm 10 ne le corrige pas toujours ([TheRock#8461](https://github.com/ROCm/TheRock/issues/8461)).
 
-1. Pilote AMD Software Adrenalin à jour, puis redémarrage.
-2. L'installation ROCm 10 ci-dessus, plus récente que ROCm 7.
-3. En dernier recours, WSL2 (Linux dans Windows), où PyTorch pour cartes AMD est plus éprouvé.
+Si une application de Pinokio (Wan 2.2, ComfyUI…) utilise déjà ta carte, une version de PyTorch marche chez toi. Pour la retrouver :
+
+```bash
+py -3.12 voix/diagnostic_gpu.py
+```
+
+Le script interroge chaque environnement Python de Pinokio et du projet, sans rien modifier. Il dit lequel voit la carte, avec quelle version de PyTorch, et d'où elle vient. Si Pinokio n'est pas trouvé, ajoute `--pinokio` suivi de son dossier.
+
+Sinon : pilote AMD Software Adrenalin à jour puis redémarrage, ou WSL2 (Linux dans Windows), où PyTorch pour cartes AMD est plus éprouvé.
 
 Dans tous les cas, le serveur de voix continue de fonctionner : il repasse tout seul sur le processeur.
 
