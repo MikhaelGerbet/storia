@@ -17,11 +17,12 @@ export interface WanInstall {
   models: string[];
 }
 
-/** Fichiers des modèles dont on se sert, dans le dossier ckpts de Wan2GP. */
-const MODEL_FILES: [string, RegExp][] = [
-  ['Wan 2.2 image vers vidéo', /^wan2\.2_image2video_14B_/i],
-  ['Z-Image Turbo', /^ZImageTurbo/i],
+/** Fichiers des modèles dont on se sert, dans le dossier ckpts de Wan2GP, avec leur poids approximatif en Go. */
+const MODEL_FILES: [string, RegExp, number][] = [
+  ['Wan 2.2 image vers vidéo', /^wan2\.2_image2video_14B_/i, 30],
+  ['Z-Image Turbo', /^ZImageTurbo/i, 11],
 ];
+const savedGb = (x: WanInstall) => MODEL_FILES.filter(([name]) => x.models.includes(name)).reduce((sum, [, , gb]) => sum + gb, 0);
 
 /** `--process` sait lire un fichier de réglages .json depuis la 9.82. */
 export const MIN_VERSION = 9.82;
@@ -84,7 +85,7 @@ export async function findWan(explicit?: string, homes: string[] = defaultPinoki
     throw new Error(`Wan2GP ${newest.version} est trop ancien pour être piloté (version ${MIN_VERSION} au moins) : mets-le à jour dans Pinokio (« Update »).`);
   }
   // Chaque installation télécharge ses propres modèles : on évite d'en retélécharger des dizaines de gigaoctets.
-  usable.sort((a, b) => b.models.length - a.models.length || Number.parseFloat(b.version) - Number.parseFloat(a.version));
+  usable.sort((a, b) => savedGb(b) - savedGb(a) || Number.parseFloat(b.version) - Number.parseFloat(a.version));
   return usable[0];
 }
 

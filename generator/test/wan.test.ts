@@ -55,6 +55,10 @@ test('Wan2GP est trouvé dans Pinokio, et la version la plus récente l’emport
   const withModels = await findWan(undefined, [recent.home]);
   assert.equal(withModels.appDir, old);
   assert.deepEqual(withModels.models, ['Wan 2.2 image vers vidéo']);
+  // Z-Image d'un côté, Wan 2.2 de l'autre : Wan 2.2 pèse le plus lourd
+  await mkdir(path.join(recent.appDir, 'ckpts'));
+  await writeFile(path.join(recent.appDir, 'ckpts', 'ZImageTurbo_quanto_bf16_int8.safetensors'), '');
+  assert.equal((await findWan(undefined, [recent.home])).appDir, old);
   await writeFile(path.join(old, 'wgp.py'), 'WanGP_version = "9.9"\n');
   await writeFile(path.join(recent.appDir, 'wgp.py'), 'WanGP_version = "9.8"\n');
   await rm(old, { recursive: true });
