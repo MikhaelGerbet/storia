@@ -86,6 +86,13 @@ La réponse attendue est `True AMD Radeon RX 7900 XT`. Relance alors le serveur 
 
 Ces commandes viennent de la page d'AMD « Install PyTorch for Radeon on Windows » : <https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/windows/install-pytorch.html>. Si AMD publie une version plus récente, reprends celle de la page.
 
+### Si PyTorch ne voit pas la carte (« No HIP GPUs are available »)
+
+1. Presque toujours, le pilote est trop ancien. Ouvre AMD Software: Adrenalin Edition, lance « Rechercher des mises à jour » (version 26.2.2 au minimum), installe, puis **redémarre le PC**.
+2. Si le message persiste, désactive le petit processeur graphique intégré au Ryzen (Gestionnaire de périphériques, « Cartes graphiques », « AMD Radeon(TM) Graphics », Désactiver), puis réessaie.
+
+Dans tous les cas, le serveur de voix continue de fonctionner : il repasse tout seul sur le processeur.
+
 ### Les messages « Badcase detected… retrying »
 
 VoxCPM2 recommence une phrase quand l'audio dure plus de N fois le texte : c'est son garde-fou contre une voix qui s'emballe. Le seuil d'origine (6) déclenche à tort sur une narration posée de conteur. Le serveur le relève à 10 ; règle-le avec `--seuil-reprise` si besoin.
