@@ -1340,17 +1340,18 @@ class AudioEngine {
     if (!this.live.size) return;
     g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(on ? 1 : 0.0001, t + 0.8);
   }
-  duck(on) { // la voix passe devant : l'ambiance et la musique se retirent un peu
+  duck(on) { // la voix passe devant : ambiance, musique et bruitages se retirent pour ne jamais la couvrir
     const t = this.ctx.currentTime;
-    [this.ambIn, this.musicIn].forEach((node) => {
+    [[this.ambIn, 0.4], [this.musicIn, 0.35], [this.sfx, 0.5]].forEach(([node, low]) => {
       node.gain.cancelScheduledValues(t);
       node.gain.setValueAtTime(node.gain.value, t);
-      node.gain.setTargetAtTime(on ? 0.5 : 1, t, on ? 0.12 : 0.45);
+      node.gain.setTargetAtTime(on ? low : 1, t, on ? 0.12 : 0.45);
     });
   }
-  playBuffer(buffer, when, offset, duration) {
+  playBuffer(buffer, when, offset, duration, level = 1) {
     const src = this.ctx.createBufferSource(); src.buffer = buffer;
-    src.connect(this.voice);
+    if (level === 1) src.connect(this.voice);
+    else { const g = this.ctx.createGain(); g.gain.value = level; src.connect(g); g.connect(this.voice); }
     src.start(when, offset, duration); this.track(src);
   }
   stopAll() {
@@ -1358,11 +1359,12 @@ class AudioEngine {
     clearInterval(this.ticker); this.ticker = null;
     const g = this.master.gain;
     g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0.0001, t + 0.35);
-    [this.ambLevel.gain, this.musicLevel.gain, this.ambIn.gain, this.musicIn.gain].forEach((p) => { p.cancelScheduledValues(t); });
+    [this.ambLevel.gain, this.musicLevel.gain, this.ambIn.gain, this.musicIn.gain, this.sfx.gain].forEach((p) => { p.cancelScheduledValues(t); });
     this.ambLevel.gain.setValueAtTime(0.0001, t + 0.36);
     this.musicLevel.gain.setValueAtTime(0.0001, t + 0.36);
     this.ambIn.gain.setValueAtTime(1, t + 0.36);
     this.musicIn.gain.setValueAtTime(1, t + 0.36);
+    this.sfx.gain.setValueAtTime(1, t + 0.36);
     const sources = [...this.live];
     this.live.clear();
     setTimeout(() => {
@@ -1425,7 +1427,24 @@ const browserVoice = {
   },
 };
 
-let userVoice = { mode: null, buffers: [], bounds: null, names: [], auto: false };
+let userVoice = { mode: null, buffers: [], levels: [], bounds: null, names: [], auto: false };
+
+// Gain qui met une voix enregistrée au même niveau qu'une autre, d'une phrase à l'autre et d'un moteur à l'autre.
+function voiceLevel(buf) {
+  const d = buf.getChannelData(0), win = Math.max(1, Math.floor(buf.sampleRate * 0.02)), n = Math.floor(d.length / win);
+  const frames = [];
+  let peak = 0;
+  for (let w = 0; w < n; w++) {
+    let s = 0;
+    for (let i = w * win; i < (w + 1) * win; i++) { s += d[i] * d[i]; peak = Math.max(peak, Math.abs(d[i])); }
+    frames.push(Math.sqrt(s / win));
+  }
+  if (!frames.length || !peak) return 1;
+  const sorted = [...frames].sort((a, b) => a - b), floor = Math.max(0.002, sorted[Math.floor(sorted.length * 0.95)] * 0.08);
+  const voiced = frames.filter((f) => f >= floor);
+  const rms = Math.sqrt(voiced.reduce((a, f) => a + f * f, 0) / Math.max(1, voiced.length));
+  return clamp(Math.min(0.12 / rms, 0.95 / peak), 0.25, 6);
+}
 
 // Repère les silences d'un enregistrement unique pour le couper en phrases.
 function findCuts(buf, nCuts) {
@@ -1508,12 +1527,12 @@ function speakSegment(i) {
   const text = SCENE.segments[i].text;
   if (userVoice.mode === 'single') {
     const a = userVoice.bounds[i], b = userVoice.bounds[i + 1];
-    audio.playBuffer(userVoice.buffers[0], audio.now() + 0.05, a, b - a);
+    audio.playBuffer(userVoice.buffers[0], audio.now() + 0.05, a, b - a, userVoice.levels[0]);
     return { started: wait(0.05), ended: wait(0.05 + (b - a)), ownTiming: true };
   }
   if (userVoice.mode === 'multi' && userVoice.buffers[i]) {
     const buf = userVoice.buffers[i];
-    audio.playBuffer(buf, audio.now() + 0.05, 0, buf.duration);
+    audio.playBuffer(buf, audio.now() + 0.05, 0, buf.duration, userVoice.levels[i]);
     return { started: wait(0.05), ended: wait(0.05 + buf.duration) };
   }
   return browserVoice.speak(text);
@@ -1661,9 +1680,9 @@ async function useVoiceData(items) {
       lens.forEach((l) => { acc += l; bounds.push(start + ((end - start) * acc) / total); });
       bounds[n] = Math.min(buf.duration, end + 0.25);
     }
-    userVoice = { mode: 'single', buffers: decoded, bounds, names: [items[0].name], auto };
+    userVoice = { mode: 'single', buffers: decoded, levels: decoded.map(voiceLevel), bounds, names: [items[0].name], auto };
   } else {
-    userVoice = { mode: 'multi', buffers: decoded, bounds: null, names: items.map((it) => it.name), auto: true };
+    userVoice = { mode: 'multi', buffers: decoded, levels: decoded.map(voiceLevel), bounds: null, names: items.map((it) => it.name), auto: true };
   }
   renderStatus();
 }
@@ -1694,7 +1713,7 @@ function renderStatus(error) {
 }
 function resetMine() {
   customImage = null;
-  userVoice = { mode: null, buffers: [], bounds: null, names: [], auto: false };
+  userVoice = { mode: null, buffers: [], levels: [], bounds: null, names: [], auto: false };
   $('#waterline-field').hidden = true;
   $('#file-image').value = ''; $('#file-voice').value = '';
   setScene(standIn);

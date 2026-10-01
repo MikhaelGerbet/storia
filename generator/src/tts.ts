@@ -1,6 +1,8 @@
 // Voix : un serveur local qui parle le langage de Pocket TTS (POST /tts, formulaire multipart).
 // Ce peut être Pocket TTS lui-même ou voix/serveur_voix.py (VoxCPM2, Chatterbox), sur le port 8001.
-// La requête passe par node:http plutôt que fetch : fetch abandonne au bout de 5 minutes sans réponse,
+// voix/serveur_voix.py sait aussi lire une scène entière (POST /recit) : chaque phrase d'un seul souffle,
+// relue par Whisper, puis découpée en segments. Le générateur s'en sert quand le serveur le propose.
+// Les requêtes passent par node:http plutôt que fetch : fetch abandonne au bout de 5 minutes sans réponse,
 // or une phrase peut prendre plus longtemps quand la voix est générée sur le processeur.
 import http from 'node:http';
 import https from 'node:https';
@@ -68,4 +70,115 @@ export async function synthesize(text: string, o: TtsOptions): Promise<Uint8Arra
   }
   if (res.status !== 200) throw new Error(`Le serveur de voix a renvoyé l'erreur ${res.status} : ${res.body.toString('utf8').slice(0, 300)}`);
   return fixWavHeader(new Uint8Array(res.body));
+}
+
+export interface NarrationSegment {
+  text: string;
+  pause: number;
+}
+
+/** Progression envoyée par le serveur de voix, une ligne par phrase lue. */
+export interface NarrationEvent {
+  type: 'debut' | 'phrase';
+  phrases?: number;
+  relecture?: string | null;
+  numero?: number;
+  total?: number;
+  secondes?: number;
+  parole?: number;
+  essais?: number;
+  texte?: string;
+  ressemblance?: number | null;
+  entendu?: string | null;
+  alerte?: string | null;
+}
+
+export interface Narration {
+  /** Un WAV par segment de la scène. */
+  clips: Uint8Array[];
+  /** Pauses après chaque segment, recalées sur le rythme de la lecture. */
+  pauses: number[];
+  /** Ce que le serveur a dit de chaque phrase : durée, lectures, ce que Whisper a entendu. */
+  report: NarrationEvent[];
+}
+
+/** Le serveur ne sait lire que phrase par phrase (Pocket TTS, ou une version précédente du serveur). */
+export class NarrationUnsupported extends Error {}
+
+/** Envoie une requête et transmet la réponse ligne par ligne, au fil de l'eau. */
+function postLines(url: URL, body: Buffer, timeoutMs: number, onLine: (line: string) => void): Promise<{ status: number; text: string }> {
+  const client = url.protocol === 'https:' ? https : http;
+  return new Promise((resolve, reject) => {
+    const req = client.request(url, { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': body.length } }, (res) => {
+      const status = res.statusCode ?? 0;
+      let pending = '';
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk: string) => {
+        if (status !== 200) {
+          text += chunk;
+          return;
+        }
+        pending += chunk;
+        let newline: number;
+        while ((newline = pending.indexOf('\n')) >= 0) {
+          const line = pending.slice(0, newline).trim();
+          pending = pending.slice(newline + 1);
+          if (line) onLine(line);
+        }
+      });
+      res.on('end', () => {
+        if (status === 200 && pending.trim()) onLine(pending.trim());
+        resolve({ status, text });
+      });
+      res.on('error', reject);
+    });
+    // Délai d'inactivité : il repart à chaque phrase reçue, quelle que soit la longueur de la scène.
+    req.setTimeout(timeoutMs, () => req.destroy(Object.assign(new Error('délai dépassé'), { code: 'STORIA_TIMEOUT' })));
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
+/** Fait lire toute une scène au serveur de voix (POST /recit), en suivant sa progression. */
+export async function narrate(segments: NarrationSegment[], o: TtsOptions & { onEvent?: (event: NarrationEvent) => void }): Promise<Narration> {
+  const request = {
+    segments,
+    voice_wav: o.voiceSample ? Buffer.from(o.voiceSample.bytes).toString('base64') : undefined,
+    voice_name: o.voiceSample?.name,
+  };
+  const timeoutMs = o.timeoutMs ?? 30 * 60_000;
+  const report: NarrationEvent[] = [];
+  let done: { segments: { wav: string; pause: number }[] } | undefined;
+  let failure: string | undefined;
+  let started = false;
+  let res: { status: number; text: string };
+  try {
+    res = await postLines(new URL(`${o.url}/recit`), Buffer.from(JSON.stringify(request)), timeoutMs, (line) => {
+      const event = JSON.parse(line) as Omit<NarrationEvent, 'type'> & { type: string; detail?: string; segments?: { wav: string; pause: number }[] };
+      started = true;
+      if (event.type === 'fin') done = { segments: event.segments ?? [] };
+      else if (event.type === 'erreur') failure = event.detail ?? 'erreur inconnue';
+      else if (event.type === 'debut' || event.type === 'phrase') {
+        const progress = event as NarrationEvent;
+        if (progress.type === 'phrase') report.push(progress);
+        o.onEvent?.(progress);
+      }
+    });
+  } catch (err) {
+    if ((err as { code?: string }).code === 'STORIA_TIMEOUT') {
+      throw new Error(`Le serveur de voix n'a pas avancé en ${Math.round(timeoutMs / 60_000)} minutes. Regarde sa fenêtre : s'il tourne sur le processeur, installe PyTorch pour ta carte graphique (voir voix/README.md).`);
+    }
+    if (started) throw new Error("Le serveur de voix s'est arrêté au milieu du récit. Regarde sa fenêtre pour en voir la raison.");
+    throw new Error(`Aucun serveur de voix ne répond sur ${o.url}. Lance-le d'abord (voir voix/README.md), puis attends qu'il affiche « Voix prête ».`);
+  }
+  if (res.status === 404 || res.status === 405) throw new NarrationUnsupported(`${o.url} ne lit que phrase par phrase`);
+  if (res.status !== 200) throw new Error(`Le serveur de voix a renvoyé l'erreur ${res.status} : ${res.text.slice(0, 300)}`);
+  if (failure) throw new Error(`Le serveur de voix a échoué : ${failure}`);
+  if (!done || done.segments.length !== segments.length) throw new Error('Le serveur de voix a coupé le récit avant la fin. Regarde sa fenêtre.');
+  return {
+    clips: done.segments.map((s) => fixWavHeader(new Uint8Array(Buffer.from(s.wav, 'base64')))),
+    pauses: done.segments.map((s, i) => (Number.isFinite(s.pause) ? s.pause : segments[i].pause)),
+    report,
+  };
 }

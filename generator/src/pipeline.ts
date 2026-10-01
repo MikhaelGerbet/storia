@@ -7,7 +7,8 @@ import { buildPlayerHtml, toDataUri } from './package.ts';
 import type { StoryPackage } from './package.ts';
 import { AGE_PROFILES, arrangeEffects, imagePrompt, toPlayerScene } from './scene.ts';
 import type { AgeBand, PlayerScene } from './scene.ts';
-import { synthesize } from './tts.ts';
+import { NarrationUnsupported, narrate, synthesize } from './tts.ts';
+import type { NarrationEvent } from './tts.ts';
 import { wavInfo } from './wav.ts';
 
 export interface PipelineOptions {
@@ -97,6 +98,25 @@ function shuffled<T>(items: T[]): T[] {
 const IMAGE_EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
 const LETTERS = 'ABCDEFGH';
 
+/** Une voix pour toute la scène : un WAV par segment, les pauses recalées sur sa lecture, et son bilan. */
+interface VoiceSet {
+  voices: Uint8Array[];
+  pauses: number[];
+  report: NarrationEvent[];
+}
+
+const duration = (seconds: number) => (seconds < 60 ? `${seconds.toFixed(1)} s` : `${Math.floor(seconds / 60)} min ${Math.round(seconds % 60)} s`);
+
+function describeEvent(event: NarrationEvent): string[] {
+  if (event.type === 'debut') return [`${event.phrases} phrase${(event.phrases ?? 0) > 1 ? 's' : ''} à lire, chacune d'un seul souffle${event.relecture ? `, relues par ${event.relecture}` : ''}`];
+  const details = [`${event.parole} s de parole`];
+  if ((event.essais ?? 1) > 1) details.push(`${event.essais} lectures`);
+  if (event.ressemblance != null) details.push(`relue à ${Math.round(event.ressemblance * 100)} %`);
+  const lines = [`phrase ${event.numero}/${event.total} lue en ${duration(event.secondes ?? 0)} (${details.join(', ')})`];
+  if (event.alerte) lines.push(`  attention : ${event.alerte}`);
+  return lines;
+}
+
 export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
   const start = performance.now();
   const elapsed = () => `${((performance.now() - start) / 1000).toFixed(1)} s`;
@@ -132,20 +152,36 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
   const ttsUrls = o.withVoice ? o.ttsUrls : [];
   o.log(`2/3 ${[ttsUrls.length > 1 ? `${ttsUrls.length} voix` : ttsUrls.length && 'Voix', o.withImage && 'image'].filter(Boolean).join(' et ') || 'Rien à générer'}…`);
   const voicesTask = (async () => {
-    const sets: Uint8Array[][] = [];
+    const sets: VoiceSet[] = [];
     const n = scene.segments.length;
     for (const url of ttsUrls) {
-      const voices: Uint8Array[] = [];
-      for (const [i, segment] of scene.segments.entries()) {
-        const begun = performance.now();
-        const voice = await synthesize(segment.text, { url, voice: o.voice, voiceSample });
-        voices.push(voice);
-        const took = (performance.now() - begun) / 1000;
-        o.log(`    voix${ttsUrls.length > 1 ? ` ${url}` : ''} : phrase ${i + 1}/${n} lue en ${took < 60 ? `${took.toFixed(1)} s` : `${Math.floor(took / 60)} min ${Math.round(took % 60)} s`} (${wavInfo(voice).duration.toFixed(1)} s de parole)`);
+      const tag = `    voix${ttsUrls.length > 1 ? ` ${url}` : ''} : `;
+      let set: VoiceSet | undefined;
+      try {
+        // Toute la scène d'un coup : le serveur lit chaque phrase d'un seul souffle et vérifie chaque lecture.
+        const told = await narrate(
+          scene.segments.map((s) => ({ text: s.text, pause: s.pause })),
+          { url, voice: o.voice, voiceSample, onEvent: (event) => describeEvent(event).forEach((line) => o.log(tag + line)) },
+        );
+        set = { voices: told.clips, pauses: told.pauses, report: told.report };
+      } catch (err) {
+        if (!(err instanceof NarrationUnsupported)) throw err;
       }
-      const total = voices.reduce((sum, v) => sum + wavInfo(v).duration, 0);
-      o.log(`    voix${ttsUrls.length > 1 ? ` ${url}` : ''} terminée : ${total.toFixed(1)} s de parole (${elapsed()})`);
-      sets.push(voices);
+      if (!set) {
+        // Serveur qui ne lit que phrase par phrase (Pocket TTS) : un segment après l'autre.
+        const voices: Uint8Array[] = [];
+        for (const [i, segment] of scene.segments.entries()) {
+          const begun = performance.now();
+          const voice = await synthesize(segment.text, { url, voice: o.voice, voiceSample });
+          voices.push(voice);
+          o.log(`${tag}phrase ${i + 1}/${n} lue en ${duration((performance.now() - begun) / 1000)} (${wavInfo(voice).duration.toFixed(1)} s de parole)`);
+        }
+        set = { voices, pauses: scene.segments.map((s) => s.pause), report: [] };
+      }
+      const total = set.voices.reduce((sum, v) => sum + wavInfo(v).duration, 0);
+      const doubtful = set.report.filter((e) => e.alerte).length;
+      o.log(`${tag}terminée, ${total.toFixed(1)} s de parole (${elapsed()})${doubtful ? `. Attention : ${doubtful} phrase${doubtful > 1 ? 's' : ''} douteuse${doubtful > 1 ? 's' : ''}, écoute-les (voix/rapport.json)` : ''}`);
+      sets.push(set);
     }
     return sets;
   })();
@@ -168,41 +204,43 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
   const imageUri = image ? toDataUri(image.bytes, image.mime) : undefined;
 
   const voiceCredit = !o.withVoice ? 'celle du navigateur' : voiceSample ? `imitée de ${voiceSample.name}` : `« ${o.voice} »`;
-  const page = (voices: Uint8Array[], credits: string): StoryPackage => ({
+  const page = (set: VoiceSet | undefined, credits: string): StoryPackage => ({
     version: 1,
-    scene,
+    // Les pauses suivent la lecture de cette voix-là : chaque page a les siennes.
+    scene: set ? { ...scene, segments: scene.segments.map((s, i) => ({ ...s, pause: set.pauses[i] ?? s.pause })) } : scene,
     teaser,
     audienceLabel: AGE_PROFILES[o.age].label,
     credits,
     effects: { waterline: o.waterline },
     image: imageUri,
-    voices: voices.length ? voices.map((v) => toDataUri(v, 'audio/wav')) : undefined,
+    voices: set?.voices.length ? set.voices.map((v) => toDataUri(v, 'audio/wav')) : undefined,
     createdAt: new Date().toISOString(),
   });
   const imageCredit = o.withImage ? 'ComfyUI' : 'illustration provisoire';
   const textCredit = o.sceneFile ? path.basename(o.sceneFile) : o.model;
 
+  const saveVoice = async (set: VoiceSet, dir: string) => {
+    await mkdir(dir, { recursive: true });
+    await Promise.all(set.voices.map((v, i) => writeFile(path.join(dir, `${String(i + 1).padStart(2, '0')}.wav`), v)));
+    if (set.report.length) await writeFile(path.join(dir, 'rapport.json'), `${JSON.stringify(set.report, null, 2)}\n`);
+  };
   const htmlPaths: string[] = [];
   if (!comparing) {
-    const voices = voiceSets[0] ?? [];
-    if (voices.length) {
-      await mkdir(path.join(folder, 'voix'), { recursive: true });
-      await Promise.all(voices.map((v, i) => writeFile(path.join(folder, 'voix', `${String(i + 1).padStart(2, '0')}.wav`), v)));
-    }
+    const set = voiceSets[0];
+    if (set) await saveVoice(set, path.join(folder, 'voix'));
     const htmlPath = path.join(folder, 'index.html');
-    const credits = `Texte : ${textCredit} · Voix : ${voices.length ? voiceCredit : 'celle du navigateur'} · Image : ${imageCredit}. Tout a été généré sur ton PC.`;
-    await writeFile(htmlPath, buildPlayerHtml(template, page(voices, credits)));
+    const credits = `Texte : ${textCredit} · Voix : ${set ? voiceCredit : 'celle du navigateur'} · Image : ${imageCredit}. Tout a été généré sur ton PC.`;
+    await writeFile(htmlPath, buildPlayerHtml(template, page(set, credits)));
     htmlPaths.push(htmlPath);
   } else {
     // Comparaison à l'aveugle : la lettre de chaque page est tirée au sort, la correspondance est à part.
-    const order = shuffled(voiceSets.map((voices, i) => ({ voices, url: ttsUrls[i] })));
+    const order = shuffled(voiceSets.map((set, i) => ({ set, url: ttsUrls[i] })));
     const mapping: string[] = [];
-    for (const [i, { voices, url }] of order.entries()) {
+    for (const [i, { set, url }] of order.entries()) {
       const letter = LETTERS[i];
-      await mkdir(path.join(folder, 'voix', letter), { recursive: true });
-      await Promise.all(voices.map((v, k) => writeFile(path.join(folder, 'voix', letter, `${String(k + 1).padStart(2, '0')}.wav`), v)));
+      await saveVoice(set, path.join(folder, 'voix', letter));
       const htmlPath = path.join(folder, `voix-${letter}.html`);
-      await writeFile(htmlPath, buildPlayerHtml(template, page(voices, `Comparaison à l'aveugle : voix ${letter}. Texte : ${textCredit} · Image : ${imageCredit}.`)));
+      await writeFile(htmlPath, buildPlayerHtml(template, page(set, `Comparaison à l'aveugle : voix ${letter}. Texte : ${textCredit} · Image : ${imageCredit}.`)));
       htmlPaths.push(htmlPath);
       mapping.push(`Voix ${letter} : ${url}`);
     }

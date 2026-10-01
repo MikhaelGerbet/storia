@@ -47,12 +47,20 @@ export function streamingWav(seconds: number, rate = 24000, freq = 220): Buffer 
 
 export interface MockServices {
   url: string;
-  calls: { chat: unknown[]; unload: unknown[]; tts: string[]; prompts: unknown[] };
+  calls: { chat: unknown[]; unload: unknown[]; tts: string[]; recit: { segments: { text: string; pause: number }[] }[]; prompts: unknown[] };
   close: () => Promise<void>;
 }
 
-export async function startMockServices(options: { draft: unknown; image?: Buffer; wavSeconds?: (text: string) => number }): Promise<MockServices> {
-  const calls: MockServices['calls'] = { chat: [], unload: [], tts: [], prompts: [] };
+export interface MockOptions {
+  draft: unknown;
+  image?: Buffer;
+  wavSeconds?: (text: string) => number;
+  /** Sait lire une scène entière (POST /recit), comme voix/serveur_voix.py ; sinon, phrase par phrase seulement. */
+  narration?: { alerte?: string };
+}
+
+export async function startMockServices(options: MockOptions): Promise<MockServices> {
+  const calls: MockServices['calls'] = { chat: [], unload: [], tts: [], recit: [], prompts: [] };
   let polls = 0;
   const server = http.createServer(async (req, res) => {
     const chunks: Buffer[] = [];
@@ -77,6 +85,16 @@ export async function startMockServices(options: { draft: unknown; image?: Buffe
       calls.tts.push(text);
       res.writeHead(200, { 'content-type': 'audio/wav' });
       return res.end(streamingWav(options.wavSeconds?.(text) ?? 0.6));
+    }
+    if (req.method === 'POST' && pathname === '/recit' && options.narration) {
+      const request = JSON.parse(body.toString()) as { segments: { text: string; pause: number }[] };
+      calls.recit.push(request);
+      const line = (event: unknown) => res.write(`${JSON.stringify(event)}\n`);
+      res.writeHead(200, { 'content-type': 'application/x-ndjson' });
+      line({ type: 'debut', phrases: 1, relecture: 'faux-whisper' });
+      line({ type: 'phrase', numero: 1, total: 1, secondes: 1.5, parole: 3.2, essais: 2, ressemblance: 0.97, entendu: 'texte', alerte: options.narration.alerte ?? null });
+      const segments = request.segments.map((s) => ({ wav: streamingWav(options.wavSeconds?.(s.text) ?? 0.6).toString('base64'), pause: s.pause + 0.1 }));
+      return res.end(`${JSON.stringify({ type: 'fin', segments })}\n`);
     }
     if (req.method === 'POST' && pathname === '/prompt') {
       calls.prompts.push(JSON.parse(body.toString()));

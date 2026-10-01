@@ -55,7 +55,15 @@ Lancement :
 ./.venv-voxcpm/Scripts/python voix/serveur_voix.py --voix-ref voix/references/conteur.wav --voix-ref-texte voix/texte-de-reference.txt
 ```
 
-Au premier lancement, les poids du modèle se téléchargent (quelques gigaoctets). Attends « Voix prête » : le générateur l'utilise ensuite sans option supplémentaire. Ctrl+C l'arrête, et la même commande le relance.
+Avec un MP3, remplace `.wav` par `.mp3`. Au premier lancement, les poids de VoxCPM2 et de Whisper se téléchargent (quelques gigaoctets). Le serveur fait ensuite une lecture d'essai, le « préchauffage », puis affiche « Voix prête » : le générateur l'utilise alors sans option supplémentaire. Ctrl+C l'arrête, et la même commande le relance.
+
+### Ce que fait le serveur pour chaque histoire
+
+1. **Il lit chaque phrase d'un seul souffle.** Le générateur découpe le texte en segments, pour caler les bruitages : « dormait un bateau pirate » puis « que personne n'avait vu depuis cent ans. ». Lus séparément, ces morceaux sonnent faux, chacun avec une intonation de fin de phrase. Le serveur lit donc la phrase entière, puis la recoupe dans ses silences. Les pauses du lecteur suivent ce rythme.
+2. **Il vérifie chaque lecture.** Whisper, un modèle de reconnaissance vocale, réécoute la phrase. Une phrase sautée, tronquée, bredouillée, beaucoup trop longue ou coupée d'un long silence est relue, trois fois au plus. Le générateur affiche le score de chaque phrase (« relue à 97 % ») et signale celles qui restent douteuses dans `voix/rapport.json`.
+3. **Il met la voix à niveau constant**, d'une phrase à l'autre, et retire les blancs du début et de la fin.
+
+La transcription donnée par `--voix-ref-texte` rend l'imitation plus fidèle, mais seulement si elle colle mot à mot à l'enregistrement : sinon, VoxCPM2 se perd, saute des phrases ou en lit d'autres. Le serveur la vérifie donc avec Whisper au démarrage. Si elle ne colle pas, il affiche ce qu'il a entendu et imite la voix sans elle.
 
 Réglages utiles :
 
@@ -64,6 +72,8 @@ Réglages utiles :
 | `--style "(warm storyteller, calm and slow)"` | Consigne de ton ajoutée devant chaque phrase. Essaie aussi « (soft, mysterious whisper) ». |
 | `--etapes 16` | Meilleure qualité, plus lent (défaut 10) |
 | `--cfg 2.5` | Suit plus fidèlement la voix et le style (défaut 2.0) |
+| `--essais 5` | Lectures au plus pour une phrase ratée (défaut 3) |
+| `--relecture aucune` | Sans Whisper : les lectures ne sont plus jugées que sur leur durée |
 
 ### Créer une voix sans l'enregistrer
 
@@ -125,9 +135,13 @@ Il interroge chaque environnement Python du projet et de Pinokio : version de Py
 
 Dans tous les cas, le serveur de voix continue de fonctionner : il repasse tout seul sur le processeur.
 
-### Les messages « Badcase detected… retrying »
+### Une lecture coupée trop longue
 
-VoxCPM2 recommence une phrase quand l'audio dure plus de N fois le texte : c'est son garde-fou contre une voix qui s'emballe. Le seuil d'origine (6) déclenche à tort sur une narration posée de conteur. Le serveur le relève à 10 ; règle-le avec `--seuil-reprise` si besoin.
+VoxCPM2 coupe une lecture qui dépasse six fois la longueur normale de son texte : c'est le signe qu'elle s'emballe, et le serveur la recommence. Une version précédente relevait ce plafond à 10, à tort. Une narration normale reste loin en dessous, même lente.
+
+### Sur carte AMD, des lectures lentes
+
+Pour chaque nouvelle longueur de phrase, la bibliothèque de calcul d'AMD (MIOpen) peut chercher longuement la meilleure façon de calculer. Le serveur règle `MIOPEN_FIND_MODE=FAST` pour l'éviter. Le préchauffage au démarrage absorbe la toute première lecture, la plus lente.
 
 ## Chatterbox, l'alternative
 
@@ -154,7 +168,7 @@ py -3.12 -m venv .venv-pocket
 py -3.12 voix/serveur_voix.py --moteur test
 ```
 
-Le serveur répond par un simple son, de la durée du texte. Pratique pour vérifier que le générateur, le port et la page fonctionnent.
+Le serveur répond par un bip par mot, avec des blancs aux virgules, comme une voix. Pratique pour vérifier que le générateur, le port, la découpe des phrases et la page fonctionnent. Les tests du serveur se lancent avec `./.venv-voxcpm/Scripts/python -m unittest discover voix`.
 
 ## Comparer des voix à l'aveugle
 

@@ -137,3 +137,27 @@ test('une scène mal formée est refusée avec un message clair', async (t) => {
   await writeFile(bad, JSON.stringify({ titre: 'pas une scène' }));
   await assert.rejects(runPipeline(options(dir, 'http://127.0.0.1:9', { sceneFile: bad, withImage: false })), /forme d'une scène/);
 });
+
+test('un serveur qui lit la scène entière recale les pauses et rend compte de chaque phrase', async (t) => {
+  const mock = await startMockServices({ draft: SAMPLE_DRAFT, narration: { alerte: 'trop long : 9.0 s de parole pour 5.8 s au plus' } });
+  t.after(() => mock.close());
+  const dir = await tempDir(t);
+  const sceneFile = path.resolve(import.meta.dirname, '..', 'scenes', 'navire-endormi.json');
+  const lines: string[] = [];
+  const result = await runPipeline(options(dir, mock.url, { sceneFile, withImage: false, log: (line) => lines.push(line) }));
+
+  assert.equal(mock.calls.tts.length, 0); // plus de lecture morceau par morceau
+  assert.equal(mock.calls.recit.length, 1);
+  assert.deepEqual(mock.calls.recit[0].segments, result.scene.segments.map((s) => ({ text: s.text, pause: s.pause })));
+  const pkg = packageOf(await readFile(path.join(result.folder, 'index.html'), 'utf8'));
+  assert.equal(pkg.voices.length, 5);
+  assert.deepEqual(
+    pkg.scene.segments.map((s: { pause: number }) => s.pause),
+    result.scene.segments.map((s) => s.pause + 0.1),
+  );
+  const report = JSON.parse(await readFile(path.join(result.folder, 'voix', 'rapport.json'), 'utf8'));
+  assert.equal(report[0].ressemblance, 0.97);
+  assert.ok(lines.some((l) => /phrase 1\/1 lue en 1\.5 s \(3\.2 s de parole, 2 lectures, relue à 97 %\)/.test(l)));
+  assert.ok(lines.some((l) => /attention : trop long/.test(l)));
+  assert.ok(lines.some((l) => /1 phrase douteuse/.test(l)));
+});
