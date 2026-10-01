@@ -215,6 +215,7 @@ summary { cursor: pointer; font-weight: 500; color: var(--moon); }
 
 <div id="drop-hint" hidden>Dépose ton image ou ta voix ici</div>
 
+<script id="storia-package" type="application/json">null</script>
 <script>
 (() => {
 'use strict';
@@ -224,7 +225,7 @@ summary { cursor: pointer; font-weight: 500; color: var(--moon); }
    C'est l'embryon du futur « format d'histoire » : le lecteur ne fait que
    jouer ce qui est décrit ici.
    ========================================================================= */
-const SCENE = {
+const DEFAULT_SCENE = {
   title: 'Le Navire endormi',
   audience: '6-8 ans',
   intro: 1.8, // secondes d'ambiance avant la première phrase
@@ -250,6 +251,12 @@ const SCENE = {
     { at: 'outro', delay: 2.8, run: 'endCard' },
   ],
 };
+
+// Une histoire produite par le générateur (dossier generator/) est injectée dans le bloc « storia-package ».
+const PKG = (() => {
+  try { return JSON.parse(document.getElementById('storia-package').textContent || 'null'); } catch (e) { return null; }
+})();
+const SCENE = PKG && PKG.scene ? PKG.scene : DEFAULT_SCENE;
 
 /* =========================================================================
    2. OUTILS
@@ -1542,6 +1549,7 @@ async function play() {
   browserVoice.unlock();
   try { await audio.resume(); } catch (e) { /* le son reste coupé */ }
   await Promise.race([voicesReady, wait(1.6)]);
+  await packageReady;
   if (!alive()) return;
   hideScreen($('#start')); hideScreen($('#end'));
   $('#stop').hidden = false;
@@ -1600,20 +1608,21 @@ function applyCustomImage() {
 }
 async function useImage(file) {
   const url = URL.createObjectURL(file);
+  try { await useImageSource(url, file.name); } finally { URL.revokeObjectURL(url); }
+}
+async function useImageSource(src, name) {
   try {
-    const im = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = url; });
+    const im = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = src; });
     const scale = Math.min(1, 2048 / Math.max(im.naturalWidth, im.naturalHeight));
     const cv = makeCanvas(Math.max(1, Math.round(im.naturalWidth * scale)), Math.max(1, Math.round(im.naturalHeight * scale)));
     cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
-    customImage = { canvas: cv, name: file.name };
+    customImage = { canvas: cv, name };
     $('#waterline-field').hidden = false;
     applyCustomImage();
   } catch (e) {
     customImage = null;
-    renderStatus(`Impossible de lire l'image « ${file.name} ». Essaie un PNG, JPG ou WebP.`);
+    renderStatus(`Impossible de lire l'image « ${name} ». Essaie un PNG, JPG ou WebP.`);
     return;
-  } finally {
-    URL.revokeObjectURL(url);
   }
   renderStatus();
 }
@@ -1624,14 +1633,18 @@ function decodeAudio(ctx, data) {
   });
 }
 async function useVoice(files) {
+  files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const items = [];
+  for (const f of files.slice(0, SCENE.segments.length)) items.push({ name: f.name, data: await f.arrayBuffer() });
+  await useVoiceData(items);
+}
+async function useVoiceData(items) {
   ensureAudio();
   const n = SCENE.segments.length;
-  files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  const picked = files.slice(0, n);
   let decoded;
   try {
     decoded = [];
-    for (const f of picked) decoded.push(await decodeAudio(audio.ctx, await f.arrayBuffer()));
+    for (const it of items) decoded.push(await decodeAudio(audio.ctx, it.data));
   } catch (e) {
     renderStatus('Impossible de lire ce fichier audio. Essaie un WAV ou un MP3.');
     return;
@@ -1648,9 +1661,9 @@ async function useVoice(files) {
       lens.forEach((l) => { acc += l; bounds.push(start + ((end - start) * acc) / total); });
       bounds[n] = Math.min(buf.duration, end + 0.25);
     }
-    userVoice = { mode: 'single', buffers: decoded, bounds, names: [picked[0].name], auto };
+    userVoice = { mode: 'single', buffers: decoded, bounds, names: [items[0].name], auto };
   } else {
-    userVoice = { mode: 'multi', buffers: decoded, bounds: null, names: picked.map((f) => f.name), auto: true };
+    userVoice = { mode: 'multi', buffers: decoded, bounds: null, names: items.map((it) => it.name), auto: true };
   }
   renderStatus();
 }
@@ -1673,6 +1686,8 @@ function renderStatus(error) {
   if (userVoice.mode === 'multi') add(`Voix : ${userVoice.buffers.length} fichier${userVoice.buffers.length > 1 ? 's' : ''} pour ${n} phrases${userVoice.buffers.length < n ? ' (la suite avec la voix du navigateur)' : ''}`, userVoice.buffers.length < n);
   if (error) add(error, true);
   $('#reset-mine').hidden = !(customImage || userVoice.mode);
+  const ownVoice = userVoice.mode === 'single' || (userVoice.mode === 'multi' && userVoice.buffers.length >= n);
+  $('#voice').closest('.field').hidden = ownVoice;
   $('#voice-note').textContent = userVoice.mode
     ? 'Voix : tes fichiers. Les sons et l’animation restent créés en direct.'
     : 'Voix provisoire : celle de ton navigateur. Les sons et l’animation sont créés en direct, sans aucun fichier.';
@@ -1726,6 +1741,24 @@ async function initVoices() {
   sel.addEventListener('change', () => { browserVoice.chosen = voices[+sel.value] || voices[0]; savePref('voice', browserVoice.chosen.name); });
 }
 const voicesReady = initVoices();
+
+function dataUriBytes(uri) {
+  const bin = atob(uri.slice(uri.indexOf(',') + 1));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+async function applyPackage(pkg) {
+  document.title = pkg.scene.title;
+  $('#start-title').textContent = pkg.scene.title;
+  $('#start .eyebrow').textContent = `Générée sur ton PC · ${pkg.audienceLabel || pkg.scene.audience || ''}`;
+  if (pkg.teaser) $('#start .lead').textContent = `${pkg.teaser} Monte le son, ou mieux : mets un casque.`;
+  if (pkg.effects && Number.isFinite(pkg.effects.waterline)) $('#waterline').value = String(pkg.effects.waterline);
+  if (pkg.image) await useImageSource(pkg.image, 'image générée');
+  if (Array.isArray(pkg.voices) && pkg.voices.length) await useVoiceData(pkg.voices.map((v, i) => ({ name: `phrase ${i + 1}`, data: dataUriBytes(v).buffer })));
+  if (pkg.credits) $('#voice-note').textContent = pkg.credits;
+}
+const packageReady = PKG ? applyPackage(PKG).catch(() => { /* on garde l'intro d'origine */ }) : Promise.resolve();
 
 $('#opt-subs').checked = loadPref('subs', 'true') === 'true';
 $('#opt-music').checked = loadPref('music', 'true') === 'true';

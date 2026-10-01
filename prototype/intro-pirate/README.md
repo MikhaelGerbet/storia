@@ -51,10 +51,10 @@ Pocket TTS est conçu pour tourner sur le processeur :
 
 ```bash
 pip install pocket-tts
-pocket-tts serve --language french
+pocket-tts serve --language french --port 8001
 ```
 
-Ouvre ensuite <http://localhost:8000>, choisis la voix `estelle`, tape chaque phrase et télécharge le résultat. Pour une meilleure qualité, plus lente : `--language french_24l`. Il peut aussi imiter une voix à partir d'un court fichier WAV, à condition d'en avoir les droits (la tienne, par exemple).
+Ouvre ensuite <http://localhost:8001>, choisis la voix `estelle`, tape chaque phrase et télécharge le résultat. Pour une meilleure qualité, plus lente : `--language french_24l`. Il peut aussi imiter une voix à partir d'un court fichier WAV, à condition d'en avoir les droits (la tienne, par exemple).
 
 ### Option C : Chatterbox Multilingual V3 (plus expressif, plus lent sans carte graphique)
 
