@@ -56,7 +56,13 @@ Deux moteurs au choix, chacun dans son propre environnement Python (dossier `.ve
 
 Avant d'installer quoi que ce soit, écoute les démos en ligne listées dans `voix/README.md`. Commence par enregistrer ta voix de conteur, comme expliqué au même endroit.
 
-### Image : ComfyUI Desktop
+### Image et animation : Wan 2.2 (Pinokio)
+
+Si Wan 2.2 tourne déjà dans Pinokio, il n'y a rien à installer : ajoute `--wan` au générateur. Il fabrique l'image, puis une animation de 5 secondes qui tourne en boucle. Le détail est dans `generator/README.md`.
+
+### Image seule : ComfyUI Desktop
+
+C'est l'autre voie, sans animation :
 
 1. Lance ComfyUI Desktop.
 2. Ouvre le modèle de workflow (« Templates ») **FLUX.2 [klein] 4B** et laisse ComfyUI télécharger les fichiers.
@@ -77,6 +83,7 @@ npm run generer
 npm run generer -- --age 3-5
 npm run generer -- --idee "un perroquet qui garde un secret"
 npm run generer -- --sans-image
+npm run generer -- --wan
 ```
 
 ## En cas de souci

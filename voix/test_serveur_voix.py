@@ -139,6 +139,27 @@ class AudioTests(unittest.TestCase):
         self.assertIn("Whisper a entendu", take.problem)
         self.assertEqual(listener.calls, 2)
 
+    def test_release_then_reload(self):
+        class Releasable(sv.TestEngine):
+            def __init__(self):
+                self.loaded, self.loads = True, 0
+
+            def release(self):
+                was, self.loaded = self.loaded, False
+                return was
+
+            def generate(self, text, reference=None, style=None):
+                if not self.loaded:
+                    self.loaded, self.loads = True, self.loads + 1
+                return super().generate(text)
+
+        engine = Releasable()
+        narrator = sv.Narrator(engine, None, attempts=1)
+        self.assertTrue(narrator.release())
+        self.assertFalse(narrator.release())  # déjà libérée
+        narrator.say("Jusqu'à cette nuit.")
+        self.assertEqual(engine.loads, 1)
+
     def test_narrate(self):
         events = []
         narrator = sv.Narrator(sv.TestEngine(), None, attempts=1)
@@ -167,6 +188,8 @@ class HttpTests(unittest.TestCase):
             request = urllib.request.Request(f"{url}/recit", data=body, headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(request) as response:
                 lines = [json.loads(line) for line in response.read().decode().splitlines()]
+            with urllib.request.urlopen(urllib.request.Request(f"{url}/liberer", data=b"", method="POST")) as response:
+                self.assertEqual(json.load(response), {"libere": False})  # le moteur de test n'occupe pas la carte
             self.assertEqual(lines[0]["type"], "debut")
             self.assertEqual(lines[-1]["type"], "fin")
             self.assertEqual(len(lines[-1]["segments"]), 5)

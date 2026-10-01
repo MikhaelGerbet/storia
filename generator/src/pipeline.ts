@@ -5,11 +5,23 @@ import { generateImage, prepareWorkflow } from './comfy.ts';
 import { writeDraft } from './ollama.ts';
 import { buildPlayerHtml, toDataUri } from './package.ts';
 import type { StoryPackage } from './package.ts';
-import { AGE_PROFILES, arrangeEffects, imagePrompt, toPlayerScene } from './scene.ts';
+import { AGE_PROFILES, arrangeEffects, imagePrompt, loopPrompt, toPlayerScene } from './scene.ts';
 import type { AgeBand, PlayerScene } from './scene.ts';
-import { NarrationUnsupported, narrate, synthesize } from './tts.ts';
+import { NarrationUnsupported, narrate, releaseVoice, synthesize } from './tts.ts';
+import { findWan, loopSettings, runWan, stillSettings } from './wan.ts';
 import type { NarrationEvent } from './tts.ts';
 import { wavInfo } from './wav.ts';
+
+export interface WanOptions {
+  /** Dossier de Wan2GP, celui qui contient wgp.py. Sinon, cherché dans Pinokio. */
+  dir?: string;
+  /** Modèle de l'image fixe dans Wan2GP (z_image par défaut). */
+  imageModel: string;
+  /** Étapes de l'animation : 4 avec les accélérateurs Lightning, 30 pour la qualité d'origine. */
+  steps: number;
+  /** Affiche la progression de Wan2GP dans le terminal. */
+  echo?: boolean;
+}
 
 export interface PipelineOptions {
   age: AgeBand;
@@ -24,6 +36,8 @@ export interface PipelineOptions {
   imagePath?: string;
   /** Animation en boucle déjà faite (MP4 ou WebM), jouée à la place de l'image. */
   videoPath?: string;
+  /** Image puis animation en boucle fabriquées par Wan2GP (Wan 2.2 dans Pinokio). */
+  wan?: WanOptions;
   withVoice: boolean;
   withImage: boolean;
   outDir: string;
@@ -140,11 +154,15 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
   if (o.withVoice && o.ttsUrls.length > LETTERS.length) throw new Error(`Au plus ${LETTERS.length} voix à comparer.`);
 
   // On vérifie tout ce qui est local avant de solliciter les modèles.
+  if (o.wan && o.videoPath) throw new Error("--wan fabrique l'animation : retire --animation, ou retire --wan pour garder la tienne.");
+  if (o.wan && !o.withImage) throw new Error("--wan fabrique l'image puis l'anime : retire --sans-image.");
   const template = await readFile(o.playerPath, 'utf8');
   const givenImage = o.imagePath ? await readMedia(o.imagePath, 'image') : undefined;
-  const video = o.videoPath ? await readMedia(o.videoPath, 'video') : undefined;
+  let video = o.videoPath ? await readMedia(o.videoPath, 'video') : undefined;
   if (video && video.bytes.length > 60_000_000) o.log(`Attention : l'animation pèse ${Math.round(video.bytes.length / 1e6)} Mo, la page sera lourde à ouvrir.`);
-  const workflowRaw = o.withImage && !givenImage
+  const wan = o.wan ? await findWan(o.wan.dir) : undefined;
+  if (wan) o.log(`Wan2GP ${wan.version} : ${wan.appDir}`);
+  const workflowRaw = o.withImage && !givenImage && !wan
     ? await readJsonFile(o.workflowPath, `Workflow d'image introuvable : ${o.workflowPath}. Exporte-le depuis ComfyUI (voir le README du générateur), ou lance avec --sans-image.`)
     : null;
   const voiceSample = o.voiceSamplePath ? { bytes: await readFile(o.voiceSamplePath), name: path.basename(o.voiceSamplePath) } : undefined;
@@ -170,7 +188,13 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
   }
 
   const ttsUrls = o.withVoice ? o.ttsUrls : [];
-  o.log(`2/3 ${[ttsUrls.length > 1 ? `${ttsUrls.length} voix` : ttsUrls.length && 'Voix', o.withImage && 'image'].filter(Boolean).join(' et ') || 'Rien à générer'}…`);
+  const comparing = ttsUrls.length > 1;
+  const folder = path.join(o.outDir, `${timestamp()}-${slugify(scene.title)}${comparing ? '-comparaison' : ''}`);
+  await mkdir(folder, { recursive: true });
+  const media = [comparing ? `${ttsUrls.length} voix` : ttsUrls.length ? 'voix' : '', o.withImage && !wan ? 'image' : ''].filter(Boolean).join(' et ');
+  const wanStep = wan ? `${givenImage ? 'animation' : 'image et animation'} avec Wan 2.2` : '';
+  const step = [media, wanStep].filter(Boolean).join(', puis ') || 'rien à générer';
+  o.log(`2/3 ${step[0].toUpperCase()}${step.slice(1)}…`);
   const voicesTask = (async () => {
     const sets: VoiceSet[] = [];
     const n = scene.segments.length;
@@ -213,14 +237,31 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     o.log(`    image : graine ${seed} (${elapsed()})`);
     return image;
   })();
-  const [voiceSets, image] = await Promise.all([voicesTask, imageTask]);
+  const [voiceSets, made] = await Promise.all([voicesTask, imageTask]);
+  let image = made;
+
+  const motion = loopPrompt(o.age);
+  if (wan && o.wan) {
+    // La carte graphique passe à Wan : le serveur de voix libère d'abord la sienne (il la reprendra au besoin).
+    await Promise.all(ttsUrls.map((url) => releaseVoice(url)));
+    const run = { install: wan, jobDir: path.join(folder, 'wan'), echo: o.wan.echo };
+    const seed = o.seed ?? Math.floor(Math.random() * 2 ** 31);
+    let still = o.imagePath;
+    if (!still) {
+      o.log(`    image : ${o.wan.imageModel} dans Wan2GP, graine ${seed}…`);
+      still = await runWan(run, 'image', stillSettings({ prompt, seed, model: o.wan.imageModel }), 'image');
+      image = await readMedia(still, 'image');
+      o.log(`    image : prête (${elapsed()})`);
+    }
+    o.log(`    animation : Wan 2.2, ${o.wan.steps} étapes, boucle de 5 secondes. Compte plusieurs minutes…`);
+    video = await readMedia(await runWan(run, 'animation', loopSettings({ prompt: motion, image: still, seed, steps: o.wan.steps }), 'video'), 'video');
+    o.log(`    animation : prête (${elapsed()})`);
+  }
 
   o.log('3/3 Assemblage…');
-  const comparing = voiceSets.length > 1;
-  const folder = path.join(o.outDir, `${timestamp()}-${slugify(scene.title)}${comparing ? '-comparaison' : ''}`);
-  await mkdir(folder, { recursive: true });
   await writeFile(path.join(folder, 'scene.json'), `${JSON.stringify(scene, null, 2)}\n`);
   await writeFile(path.join(folder, 'prompt-image.txt'), `${prompt}\n`);
+  if (wan) await writeFile(path.join(folder, 'prompt-animation.txt'), `${motion}\n`);
   if (image) await writeFile(path.join(folder, `image.${IMAGE_EXT[image.mime] ?? 'png'}`), image.bytes);
   const imageUri = image ? toDataUri(image.bytes, image.mime) : undefined;
   if (video) await writeFile(path.join(folder, `animation${path.extname(video.name).toLowerCase()}`), video.bytes);
@@ -240,7 +281,15 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     voices: set?.voices.length ? set.voices.map((v) => toDataUri(v, 'audio/wav')) : undefined,
     createdAt: new Date().toISOString(),
   });
-  const imageCredit = video ? `animation ${video.name}` : givenImage ? givenImage.name : o.withImage ? 'ComfyUI' : 'illustration provisoire';
+  const imageCredit = wan
+    ? `${givenImage ? givenImage.name : o.wan?.imageModel}, animée par Wan 2.2`
+    : video
+      ? `animation ${video.name}`
+      : givenImage
+        ? givenImage.name
+        : o.withImage
+          ? 'ComfyUI'
+          : 'illustration provisoire';
   const textCredit = o.sceneFile ? path.basename(o.sceneFile) : o.model;
 
   const saveVoice = async (set: VoiceSet, dir: string) => {

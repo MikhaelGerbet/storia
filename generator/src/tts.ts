@@ -182,3 +182,12 @@ export async function narrate(segments: NarrationSegment[], o: TtsOptions & { on
     report,
   };
 }
+
+/** Demande au serveur de voix de libérer la carte graphique pour une autre application ; il rechargera son modèle au besoin. */
+export async function releaseVoice(url: string): Promise<boolean> {
+  try {
+    return (await post(new URL(`${url}/liberer`), Buffer.alloc(0), 'application/json', 60_000)).status === 200;
+  } catch {
+    return false;
+  }
+}

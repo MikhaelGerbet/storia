@@ -8,7 +8,8 @@ import type { AgeBand } from './scene.ts';
 const root = path.resolve(import.meta.dirname, '..');
 
 const HELP = `Génère l'intro « grotte pirate » de bout en bout sur ton PC :
-texte (Ollama), voix (Pocket TTS) et image (ComfyUI), assemblés dans une page à ouvrir.
+texte (Ollama), voix (voix/serveur_voix.py ou Pocket TTS), image (ComfyUI) ou image et animation
+en boucle (Wan 2.2), assemblés dans une page à ouvrir.
 
 Utilisation :
   npm run generer -- [options]
@@ -25,6 +26,12 @@ Options :
   --image <fichier>      image déjà faite (PNG, JPG, WebP), à la place de ComfyUI
   --animation <fichier>  animation en boucle (MP4, WebM), par exemple faite avec Wan 2.2,
                          jouée à la place de l'image
+  --wan                  fabrique l'image puis l'animation en boucle avec Wan 2.2 (Wan2GP dans
+                         Pinokio), sans passer par son interface. Avec --image, anime ton image
+  --wan-dossier <dir>    dossier de Wan2GP, celui qui contient wgp.py (défaut : cherché dans Pinokio)
+  --wan-etapes <n>       étapes de l'animation : 4 (défaut, accélérateurs Lightning) ou 30 (plus lent)
+  --wan-image <modele>   modèle de l'image dans Wan2GP (défaut : z_image ; aussi flux2_klein_4b,
+                         qwen_image_20B…)
   --sans-voix            garde la voix du navigateur
   --sans-image           garde l'illustration provisoire
   --ligne-eau <nombre>   hauteur de la surface de l'eau sur l'image, de 0.3 à 0.9 (défaut : 0.62)
@@ -48,6 +55,10 @@ async function main(): Promise<void> {
       workflow: { type: 'string', default: path.join(root, 'workflow-image.json') },
       image: { type: 'string' },
       animation: { type: 'string' },
+      wan: { type: 'boolean', default: false },
+      'wan-dossier': { type: 'string' },
+      'wan-etapes': { type: 'string', default: '4' },
+      'wan-image': { type: 'string', default: 'z_image' },
       'sans-voix': { type: 'boolean', default: false },
       'sans-image': { type: 'boolean', default: false },
       'ligne-eau': { type: 'string', default: '0.62' },
@@ -72,6 +83,8 @@ async function main(): Promise<void> {
   const seed = values.graine === undefined ? undefined : Number(values.graine);
   if (seed !== undefined && !Number.isSafeInteger(seed)) throw new Error('--graine attend un nombre entier.');
   const trimUrl = (url: string) => url.replace(/\/+$/, '');
+  const wanSteps = Number(values['wan-etapes']);
+  if (!Number.isInteger(wanSteps) || wanSteps < 2 || wanSteps > 60) throw new Error('--wan-etapes attend un nombre entier entre 2 et 60.');
 
   const result = await runPipeline({
     age: values.age as AgeBand,
@@ -83,6 +96,9 @@ async function main(): Promise<void> {
     workflowPath: path.resolve(values.workflow),
     imagePath: values.image === undefined ? undefined : path.resolve(values.image),
     videoPath: values.animation === undefined ? undefined : path.resolve(values.animation),
+    wan: values.wan
+      ? { dir: values['wan-dossier'] && path.resolve(values['wan-dossier']), imageModel: values['wan-image'], steps: wanSteps, echo: true }
+      : undefined,
     withVoice: !values['sans-voix'],
     withImage: !values['sans-image'],
     outDir: path.resolve(values.sortie),

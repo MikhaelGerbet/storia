@@ -9,6 +9,7 @@ Deux portes d'entrée :
                intonation naturelle, puis découpée en segments pour caler les bruitages. Whisper
                relit chaque lecture : une phrase sautée, tronquée ou bredouillée est recommencée.
                La réponse arrive ligne par ligne (NDJSON), pour suivre la progression.
+  POST /liberer  rend la carte graphique (à Wan, par exemple) ; les modèles se rechargent au besoin.
 
 Exemples :
   python serveur_voix.py --voix-ref references/conteur.wav
@@ -96,6 +97,20 @@ def pick_device(choice: str, torch) -> str:
         sys.exit("Aucune carte graphique utilisable par PyTorch : installe PyTorch pour ta carte (voir voix/README.md) ou lance avec --appareil cpu.")
     print("Pas de carte graphique utilisable par PyTorch : la voix sera générée sur le processeur, plus lentement.")
     return "cpu"
+
+
+def free_gpu_memory() -> None:
+    """Rend à la carte graphique la mémoire des modèles qu'on vient de lâcher."""
+    import gc
+
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
 
 
 # --------------------------------------------------------------------------- texte
@@ -359,7 +374,7 @@ class ChatterboxEngine:
     def __init__(self, device: str, reference: Path | None, exaggeration: float, cfg_weight: float, temperature: float):
         try:
             import torch
-            from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+            from chatterbox.mtl_tts import ChatterboxMultilingualTTS  # noqa: F401 (vérifie l'installation)
         except ImportError:
             sys.exit(
                 "Chatterbox n'est pas installé dans cet environnement Python.\n"
@@ -367,15 +382,12 @@ class ChatterboxEngine:
             )
         self.device = pick_device(device, torch)
         print(f"Chargement de Chatterbox V3 sur « {self.device} ». Au premier lancement, les poids du modèle se téléchargent.")
-        self.model = ChatterboxMultilingualTTS.from_pretrained(device=self.device, t3_model="v3")
-        self.sample_rate = self.model.sr
         self.exaggeration = exaggeration
         self.cfg_weight = cfg_weight
         self.temperature = temperature
-        self.builtin = self.model.conds
         self.default_reference = reference
-        self.current: Path | None = None
         self.lock = threading.Lock()
+        self._load()
         if reference is None:
             print(
                 "Attention : sans --voix-ref, Chatterbox prend sa voix intégrée, qui est anglaise : "
@@ -383,6 +395,22 @@ class ChatterboxEngine:
             )
             self.cfg_weight = 0.0  # atténue l'accent de la voix de référence (conseil de Resemble AI)
         self._use(reference)
+
+    def _load(self) -> None:
+        from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+
+        self.model = ChatterboxMultilingualTTS.from_pretrained(device=self.device, t3_model="v3")
+        self.sample_rate = self.model.sr
+        self.builtin = self.model.conds
+        self.current: Path | None = None
+
+    def release(self) -> bool:
+        with self.lock:
+            if self.model is None:
+                return False
+            self.model = None
+        free_gpu_memory()
+        return True
 
     def _use(self, reference: Path | None) -> None:
         if reference == self.current and self.model.conds is not None:
@@ -395,6 +423,9 @@ class ChatterboxEngine:
 
     def generate(self, text: str, reference: Path | None = None, style: str | None = None):
         with self.lock:  # un seul texte à la fois : le modèle n'est pas prévu pour le parallélisme
+            if self.model is None:
+                print("Rechargement de Chatterbox…", flush=True)
+                self._load()
             self._use(reference or self.default_reference)
             audio = self.model.generate(
                 text,
@@ -414,14 +445,12 @@ class VoxCPMEngine:
     def __init__(self, device: str, reference: Path | None, reference_text: str | None, style: str, cfg_value: float, steps: int, length_cap: float):
         try:
             import torch
-            from voxcpm import VoxCPM
+            from voxcpm import VoxCPM  # noqa: F401 (vérifie l'installation)
         except ImportError:
             sys.exit("VoxCPM2 n'est pas installé dans cet environnement Python.\nVoir voix/README.md : pip install voxcpm")
         self.device = pick_device(device, torch)
         print(f"Chargement de VoxCPM2 sur « {self.device} ». Au premier lancement, les poids du modèle se téléchargent.")
-        # Pas de torch.compile ni de débruiteur : deux sources de pannes sous Windows, inutiles ici.
-        self.model = VoxCPM.from_pretrained("openbmb/VoxCPM2", load_denoiser=False, optimize=False, device=self.device)
-        self.sample_rate = self.model.tts_model.sample_rate
+        self._load()
         self.default_reference = reference
         self.reference_text = reference_text
         # Reprendre l'extrait et sa transcription comme amorce donne l'imitation la plus fidèle, mais
@@ -434,6 +463,21 @@ class VoxCPMEngine:
         # Au-delà de N fois la longueur du texte, VoxCPM2 coupe la lecture : c'est qu'elle s'emballe.
         self.length_cap = length_cap
         self.lock = threading.Lock()
+
+    def _load(self) -> None:
+        from voxcpm import VoxCPM
+
+        # Pas de torch.compile ni de débruiteur : deux sources de pannes sous Windows, inutiles ici.
+        self.model = VoxCPM.from_pretrained("openbmb/VoxCPM2", load_denoiser=False, optimize=False, device=self.device)
+        self.sample_rate = self.model.tts_model.sample_rate
+
+    def release(self) -> bool:
+        with self.lock:
+            if self.model is None:
+                return False
+            self.model = None
+        free_gpu_memory()
+        return True
 
     def generate(self, text: str, reference: Path | None = None, style: str | None = None):
         """`style` remplace la consigne de ton ; il sert aussi à inventer une voix, sans extrait."""
@@ -453,6 +497,9 @@ class VoxCPMEngine:
                 options["prompt_wav_path"] = str(ref)
                 options["prompt_text"] = self.reference_text
         with self.lock:
+            if self.model is None:
+                print("Rechargement de VoxCPM2…", flush=True)
+                self._load()
             audio = self.model.generate(**options)
         return audio, self.sample_rate
 
@@ -464,21 +511,32 @@ class Listener:
     """Whisper relit chaque lecture : on sait ce que la voix a vraiment dit, et quand chaque mot commence."""
 
     def __init__(self, model: str, device: str):
+        self.model_name, self.device = model, device
+        self.name = model.split("/")[-1]
+        self.lock = threading.Lock()
+        self._load()
+
+    def _load(self) -> None:
         import torch
         from transformers import pipeline
 
-        dtype = torch.float16 if device == "cuda" else torch.float32
+        dtype = torch.float16 if self.device == "cuda" else torch.float32
         last: Exception | None = None
         for extra in ({"dtype": dtype}, {"torch_dtype": dtype}, {}):  # le nom du réglage a changé selon les versions
             try:
-                self.pipe = pipeline("automatic-speech-recognition", model=model, device=device, **extra)
-                break
+                self.pipe = pipeline("automatic-speech-recognition", model=self.model_name, device=self.device, **extra)
+                return
             except TypeError as err:
                 last = err
-        else:
-            raise last or RuntimeError("Whisper ne se charge pas")
-        self.name = model.split("/")[-1]
-        self.lock = threading.Lock()
+        raise last or RuntimeError("Whisper ne se charge pas")
+
+    def release(self) -> bool:
+        with self.lock:
+            if self.pipe is None:
+                return False
+            self.pipe = None
+        free_gpu_memory()
+        return True
 
     def listen(self, audio, rate: int, timestamps: bool = True) -> tuple[str, list[tuple[str, float, float]]]:
         audio = np.asarray(audio, dtype=np.float32)
@@ -492,6 +550,8 @@ class Listener:
         elif timestamps:
             options["return_timestamps"] = "word"
         with self.lock:
+            if self.pipe is None:
+                self._load()
             out = self.pipe({"raw": audio, "sampling_rate": 16000}, **options)
         heard = []
         for chunk in out.get("chunks") or []:
@@ -601,6 +661,14 @@ class Narrator:
             })
         emit({"type": "fin", "segments": [{"wav": base64.b64encode(wav_bytes(c, rate)).decode("ascii"), "pause": p} for c, p in zip(clips, new_pauses)]})
 
+    def release(self) -> bool:
+        """Libère la carte graphique (pour Wan, par exemple) : les modèles se rechargent à la lecture suivante."""
+        freed = False
+        for part in (self.engine, self.listener):
+            if part is not None and hasattr(part, "release"):
+                freed = part.release() or freed
+        return freed
+
     def verify_reference(self, path: Path, transcript: str) -> bool:
         """L'enregistrement dit-il bien sa transcription ? Seulement alors on s'en sert comme amorce."""
         if not self.listener:
@@ -687,6 +755,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._tts()
         if path == "/recit":
             return self._recit()
+        if path == "/liberer":
+            self._read_body()
+            freed = self.narrator.release()
+            if freed:
+                print("Carte graphique libérée pour une autre application. Les modèles se rechargeront à la prochaine lecture.", flush=True)
+            return self._json(200, {"libere": freed})
         self._json(404, {"detail": "introuvable"})
 
     def _tts(self) -> None:

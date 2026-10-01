@@ -269,6 +269,16 @@ export function imagePrompt(draft: Draft, age: AgeBand): string {
     `${AGE_PROFILES[age].imageStyle}. Inside a vast sea cave at night, seen from water level: a small old pirate ship floats in the middle of the cave; ` +
     'behind it, a large opening in the cave wall looks out onto the open sea, with a full moon and a silver path of moonlight on the calm water; ' +
     `a thin waterfall pours down the left cave wall. The calm water surface fills the lower third of the image.${details}${gentle} ` +
-    'Wide 16:10 composition, no text, no letters, no people.'
+    'Wide landscape composition, no text, no letters, no people.'
+  );
+}
+
+/** Consigne de mouvement pour Wan 2.2 : de petits mouvements continus et une caméra fixe, pour une boucle sans à-coup. */
+export function loopPrompt(age: AgeBand): string {
+  return (
+    `${AGE_PROFILES[age].imageStyle}. A small old pirate ship floats in a vast sea cave at night. ` +
+    'Gentle, continuous ambient motion: the water ripples and sways softly, moonlight reflections shimmer on the surface, ' +
+    'the ship rocks very slightly, its sails barely flutter, the thin waterfall pours steadily, light mist drifts slowly. ' +
+    'The camera is perfectly still: no zoom, no pan, no cut. Calm and dreamy.'
   );
 }

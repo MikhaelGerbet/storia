@@ -6,7 +6,8 @@
 |---|---|---|
 | Texte et choix des bruitages | Ollama, modèle `mistral-small3.2` | Carte graphique |
 | Voix | VoxCPM2 (ou Chatterbox, Pocket TTS) via un serveur de voix local : voir `voix/README.md` | Carte graphique ou processeur |
-| Image | ComfyUI, FLUX.2 [klein] 4B ou Z-Image Turbo | Carte graphique |
+| Image et animation en boucle | Wan2GP, déjà dans Pinokio : Z-Image Turbo pour l'image, Wan 2.2 pour l'animer | Carte graphique |
+| Image seule (autre voie) | ComfyUI, FLUX.2 [klein] 4B ou Z-Image Turbo | Carte graphique |
 | Lecture | Le lecteur du prototype n°1 | Navigateur |
 
 ## Installation (une seule fois)
@@ -24,15 +25,37 @@
    3. choisis un format large, par exemple 1344 × 832 ;
    4. dans le menu Workflow, choisis « Export (API) » et enregistre le fichier sous `generator/workflow-image.json`.
 
+## Image et animation avec Wan 2.2 (Pinokio)
+
+Avec `--wan`, le générateur se sert de Wan2GP, l'application « Wan 2.2 » de Pinokio, sans passer par son interface :
+
+1. **L'image** : Z-Image Turbo la dessine en 1280 × 720, d'après le décor de l'histoire.
+2. **L'animation** : Wan 2.2 anime cette image pendant 5 secondes, en partant d'elle et en revenant à elle (même image au début et à la fin). La vidéo boucle donc sur elle-même, et le lecteur masque le raccord par un fondu.
+
+```bash
+npm run generer -- --scene scenes/navire-endormi.json --wan
+npm run generer -- --scene scenes/navire-endormi.json --wan --image mon-image.png   # anime ton image
+```
+
+- Wan2GP est cherché dans `C:/pinokio/api`. S'il est ailleurs : `--wan-dossier C:/chemin/vers/app`, le dossier qui contient `wgp.py`. Sa version doit être 9.82 ou plus récente. Sinon, mets-le à jour dans Pinokio.
+- Au premier usage, Wan2GP télécharge les modèles qui lui manquent (plusieurs dizaines de Go pour Wan 2.2) et les accélérateurs « Lightning ». Sa progression s'affiche dans le terminal.
+- L'animation se fait en 4 étapes grâce aux accélérateurs. `--wan-etapes 30` donne la qualité d'origine, mais c'est bien plus lent. Compte plusieurs minutes dans tous les cas.
+- L'interface de Wan dans Pinokio peut rester ouverte, mais ne lance rien dedans pendant ce temps : il n'y a qu'une carte graphique. Pour la même raison, le serveur de voix lui rend la sienne avant l'animation, puis recharge ses modèles à la lecture suivante.
+- Autre modèle d'image : `--wan-image flux2_klein_4b`, ou `qwen_image_20B` (plus lent).
+- Animation déjà faite ailleurs (MP4 ou WebM) : `--animation ma-boucle.mp4`.
+
+Les réglages envoyés à Wan2GP et ses résultats sont rangés dans le dossier `wan/` de l'histoire. Pour refaire un essai à la main : `python wgp.py --process <réglages.json>`, depuis le dossier de Wan2GP.
+
 ## Lancer
 
-Ollama, Pocket TTS et ComfyUI doivent tourner. Puis, dans le dossier `generator` :
+Ollama, le serveur de voix et, pour l'image, ComfyUI ou Wan2GP doivent être en place. Puis, dans le dossier `generator` :
 
 ```bash
 npm run generer
 npm run generer -- --age 3-5
 npm run generer -- --age 9-12 --idee "un perroquet qui garde un secret"
 npm run generer -- --sans-image    # tant que ComfyUI n'est pas prêt
+npm run generer -- --wan           # image et animation avec Wan 2.2
 ```
 
 À la fin, le chemin de la page s'affiche : ouvre-la dans ton navigateur. Le dossier contient aussi la scène (`scene.json`), les voix (`voix/`), l'image et le prompt utilisé, pour comparer les essais.
@@ -46,19 +69,21 @@ Pour réécouter le même texte avec une autre voix, reprends sa scène au lieu 
 1. **Texte.** Le modèle écrit l'intro en JSON, au format imposé par un schéma : un titre, une accroche, puis des segments. Pour chaque segment, il choisit un bruitage dans une liste fermée : goutte, vague, grincement, révélation du bateau, lanterne ou cloche.
 2. **Mise en son.** Le code applique les règles : une seule révélation, au segment où le bateau apparaît ; la lanterne après la révélation ; la cloche à la fin ; au plus un bruitage tous les deux segments.
 3. **Garde-fous.** Le ton et la longueur des phrases dépendent de l'âge. Si un mot à éviter pour cet âge apparaît, le modèle réécrit le texte. Le souhait de l'auditeur est traité comme une idée d'histoire, jamais comme une consigne. Ce n'est pas encore la vraie modération, où un second modèle relira chaque histoire : elle viendra avec la chaîne complète.
-4. **Mémoire vidéo.** Le modèle de texte est déchargé dès qu'il a fini, pour laisser la place au modèle d'image. Pendant ce temps, le processeur génère la voix.
-5. **Assemblage.** Une seule page HTML contient le lecteur, la scène, les voix et l'image.
+4. **Mémoire vidéo.** Le modèle de texte est déchargé dès qu'il a fini, pour laisser la place au modèle d'image. Avec Wan, tout se fait l'un après l'autre : la voix, puis l'image, puis l'animation.
+5. **Voix.** Le serveur lit chaque phrase d'un seul souffle, fait vérifier chaque lecture par Whisper, puis la recoupe en segments. Le générateur reprend son rythme et enregistre son bilan dans `voix/rapport.json`.
+6. **Assemblage.** Une seule page HTML contient le lecteur, la scène, les voix, l'image et l'animation.
 
 ## Limites de ce prototype
 
 - Un seul décor, la grotte pirate : ce sont les sons et les animations que le lecteur sait jouer. Les autres thèmes viendront avec la bibliothèque de sons.
-- Sur l'image générée, seules l'eau et la lumière s'animent. Règle la hauteur de l'eau dans la page, ou avec `--ligne-eau`.
+- Sans animation, sur une image générée par ComfyUI, seules l'eau et la lumière s'animent. Règle la hauteur de l'eau dans la page, ou avec `--ligne-eau`.
 - Les voix sont en WAV : une intro pèse 1 à 3 Mo. Les histoires longues passeront à un format compressé.
+- L'animation est intégrée à la page : quelques Mo de plus.
 
 ## Tests
 
 ```bash
 npm install       # outils de développement : TypeScript et types Node
-npm test          # chaîne complète contre de faux Ollama, Pocket TTS et ComfyUI
+npm test          # chaîne complète contre de faux Ollama, serveur de voix, ComfyUI et Wan2GP
 npm run verifier  # vérification des types
 ```
