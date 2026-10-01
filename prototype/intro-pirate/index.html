@@ -40,6 +40,12 @@ body {
 }
 #scene, #sparks { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 #sparks { pointer-events: none; }
+#film { position: fixed; inset: 0; overflow: hidden; background: #000; }
+#film video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.8s linear; z-index: 1; }
+#film video.is-on { opacity: 1; }
+#film video.is-top { z-index: 2; }
+#film::after { content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none; background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(4, 8, 14, 0.55) 100%); }
+#scene[hidden], #sparks[hidden], #film[hidden] { display: none; }
 
 .screen {
   position: fixed;
@@ -159,6 +165,7 @@ summary { cursor: pointer; font-weight: 500; color: var(--moon); }
 </style>
 </head>
 <body>
+<div id="film" aria-hidden="true" hidden><video muted playsinline preload="auto"></video><video muted playsinline preload="auto"></video></div>
 <canvas id="scene" aria-hidden="true"></canvas>
 <canvas id="sparks" aria-hidden="true"></canvas>
 <p id="subtitle" aria-live="polite"></p>
@@ -182,11 +189,11 @@ summary { cursor: pointer; font-weight: 500; color: var(--moon); }
       </div>
     </div>
     <details id="mine">
-      <summary>Tester avec ton image et ta voix IA</summary>
+      <summary>Tester avec ton image ou ton animation, et ta voix IA</summary>
       <div class="mine-body">
-        <p>Dépose tes fichiers sur la page, ou choisis-les ici. Pour la voix&nbsp;: un seul fichier pour toute l'intro (découpé automatiquement aux silences), ou cinq fichiers numérotés, un par phrase.</p>
+        <p>Dépose tes fichiers sur la page, ou choisis-les ici. Une animation (MP4 ou WebM) tourne en boucle, avec un fondu à chaque tour. Pour la voix&nbsp;: un seul fichier pour toute l'intro (découpé automatiquement aux silences), ou cinq fichiers numérotés, un par phrase.</p>
         <div class="row">
-          <label class="btn btn-ghost file" for="file-image">Choisir une image<input id="file-image" type="file" accept="image/*"></label>
+          <label class="btn btn-ghost file" for="file-image">Choisir une image ou une animation<input id="file-image" type="file" accept="image/*,video/mp4,video/webm,.mp4,.webm"></label>
           <label class="btn btn-ghost file" for="file-voice">Choisir la voix<input id="file-voice" type="file" accept="audio/*,.wav,.mp3,.ogg,.m4a,.flac,.opus" multiple></label>
         </div>
         <label class="field" for="waterline" id="waterline-field" hidden>Hauteur de la surface de l'eau sur ton image
@@ -213,7 +220,7 @@ summary { cursor: pointer; font-weight: 500; color: var(--moon); }
   </div>
 </section>
 
-<div id="drop-hint" hidden>Dépose ton image ou ta voix ici</div>
+<div id="drop-hint" hidden>Dépose ton image, ton animation ou ta voix ici</div>
 
 <script id="storia-package" type="application/json">null</script>
 <script>
@@ -1615,6 +1622,65 @@ function stop(toStart = true) {
 let current = null;      // scène affichée
 let standIn = null;      // illustration provisoire
 let customImage = null;  // image déposée
+let customVideo = null;  // animation déposée ou générée
+
+/* Animation en boucle (vidéo générée, par exemple avec Wan 2.2) : deux lecteurs en fondu enchaîné,
+   pour que le raccord de la boucle ne se voie pas. Les effets du récit agissent dessus. */
+const film = {
+  el: $('#film'),
+  videos: [...document.querySelectorAll('#film video')],
+  on: false, active: 0, fade: 0.8, url: null, filter: '', zoom: '',
+  async use(url) {
+    this.stop();
+    this.url = url;
+    await Promise.all(this.videos.map((v) => new Promise((resolve, reject) => {
+      v.onloadeddata = () => resolve(); v.onerror = () => reject(new Error('vidéo illisible'));
+      v.src = url; v.load();
+    })));
+    this.on = true; this.active = 0;
+    this.el.hidden = false; $('#scene').hidden = true; $('#sparks').hidden = true;
+    const v = this.videos[0];
+    v.classList.add('is-on', 'is-top');
+    if (!reducedMotion) v.play().catch(() => { /* lecture automatique refusée : image fixe */ });
+  },
+  stop() {
+    this.on = false;
+    this.videos.forEach((v) => { v.pause(); v.classList.remove('is-on', 'is-top'); v.removeAttribute('src'); v.load(); });
+    if (this.url && this.url.startsWith('blob:')) URL.revokeObjectURL(this.url);
+    this.url = null;
+    this.el.hidden = true; $('#scene').hidden = false; $('#sparks').hidden = false;
+  },
+  update(state) {
+    if (!this.on) return;
+    const v = this.videos[this.active];
+    if (!reducedMotion && v.duration && !v.paused && v.duration - v.currentTime <= this.fade) {
+      const next = this.videos[1 - this.active]; // repart du début, par-dessus, en fondu
+      next.currentTime = 0;
+      next.play().catch(() => {});
+      next.classList.add('is-on', 'is-top');
+      v.classList.remove('is-top');
+      setTimeout(() => { if (!v.classList.contains('is-top')) { v.classList.remove('is-on'); v.pause(); } }, this.fade * 1000 + 100);
+      this.active = 1 - this.active;
+    }
+    const light = 0.1 + 0.9 * state.reveal + 0.06 * state.spot;
+    const filter = `brightness(${light.toFixed(3)}) contrast(${(1 + 0.06 * state.spot).toFixed(3)}) saturate(${(1 + 0.2 * state.lantern).toFixed(3)}) sepia(${(0.12 * state.lantern).toFixed(3)})`;
+    if (filter !== this.filter) { this.el.style.filter = filter; this.filter = filter; }
+    const zoom = `scale(${state.zoom.toFixed(4)})`;
+    if (zoom !== this.zoom) { this.videos.forEach((x) => { x.style.transform = zoom; }); this.zoom = zoom; }
+  },
+};
+async function useVideoSource(url, name) {
+  try {
+    await film.use(url);
+    customVideo = { name };
+  } catch (e) {
+    film.stop();
+    customVideo = null;
+    renderStatus(`Impossible de lire l'animation « ${name} ». Essaie un MP4 (H.264) ou un WebM.`);
+    return;
+  }
+  renderStatus();
+}
 
 function setScene(scene) {
   current = scene;
@@ -1688,11 +1754,13 @@ async function useVoiceData(items) {
 }
 async function handleFiles(list) {
   const files = [...list];
+  const videos = files.filter((f) => f.type.startsWith('video/') || /\.(mp4|webm|m4v)$/i.test(f.name));
   const images = files.filter((f) => f.type.startsWith('image/'));
-  const audios = files.filter((f) => f.type.startsWith('audio/') || /\.(wav|mp3|ogg|oga|m4a|aac|flac|opus|webm)$/i.test(f.name));
+  const audios = files.filter((f) => !videos.includes(f) && (f.type.startsWith('audio/') || /\.(wav|mp3|ogg|oga|m4a|aac|flac|opus)$/i.test(f.name)));
   $('#mine').open = true;
-  if (!images.length && !audios.length) { renderStatus('Format non reconnu : dépose une image (PNG, JPG, WebP) ou un fichier audio (WAV, MP3, OGG).'); return; }
+  if (!videos.length && !images.length && !audios.length) { renderStatus('Format non reconnu : dépose une image (PNG, JPG, WebP), une animation (MP4, WebM) ou un fichier audio (WAV, MP3, OGG).'); return; }
   if (images.length) await useImage(images[0]);
+  if (videos.length) await useVideoSource(URL.createObjectURL(videos[0]), videos[0].name);
   if (audios.length) await useVoice(audios);
 }
 function renderStatus(error) {
@@ -1700,11 +1768,12 @@ function renderStatus(error) {
   ul.textContent = '';
   const add = (text, warn) => { const li = document.createElement('li'); li.textContent = text; if (warn) li.className = 'warn'; ul.append(li); };
   if (customImage) add(`Image : ${customImage.name}`);
+  if (customVideo) add(`Animation : ${customVideo.name}, en boucle`);
   const n = SCENE.segments.length;
   if (userVoice.mode === 'single') add(`Voix : ${userVoice.names[0]}, ${userVoice.auto ? `découpée aux silences en ${n} phrases` : 'découpage approximatif (silences introuvables)'}`, !userVoice.auto);
   if (userVoice.mode === 'multi') add(`Voix : ${userVoice.buffers.length} fichier${userVoice.buffers.length > 1 ? 's' : ''} pour ${n} phrases${userVoice.buffers.length < n ? ' (la suite avec la voix du navigateur)' : ''}`, userVoice.buffers.length < n);
   if (error) add(error, true);
-  $('#reset-mine').hidden = !(customImage || userVoice.mode);
+  $('#reset-mine').hidden = !(customImage || customVideo || userVoice.mode);
   const ownVoice = userVoice.mode === 'single' || (userVoice.mode === 'multi' && userVoice.buffers.length >= n);
   $('#voice').closest('.field').hidden = ownVoice;
   $('#voice-note').textContent = userVoice.mode
@@ -1713,6 +1782,8 @@ function renderStatus(error) {
 }
 function resetMine() {
   customImage = null;
+  customVideo = null;
+  film.stop();
   userVoice = { mode: null, buffers: [], levels: [], bounds: null, names: [], auto: false };
   $('#waterline-field').hidden = true;
   $('#file-image').value = ''; $('#file-voice').value = '';
@@ -1737,9 +1808,10 @@ function frame() {
   stepTweens(now);
   renderer.resize(); sparks.resize();
   const view = computeView(innerWidth, innerHeight, current.w, current.h, vis.zoom, current.meta.focus);
-  renderer.draw(view, vis, current, now);
+  if (film.on) film.update(vis);
+  else renderer.draw(view, vis, current, now);
   sparks.update(dt);
-  sparks.draw(view, vis, now);
+  if (!film.on) sparks.draw(view, vis, now);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -1774,6 +1846,10 @@ async function applyPackage(pkg) {
   if (pkg.teaser) $('#start .lead').textContent = `${pkg.teaser} Monte le son, ou mieux : mets un casque.`;
   if (pkg.effects && Number.isFinite(pkg.effects.waterline)) $('#waterline').value = String(pkg.effects.waterline);
   if (pkg.image) await useImageSource(pkg.image, 'image générée');
+  if (pkg.video) {
+    const type = pkg.video.slice(5, pkg.video.indexOf(';')) || 'video/mp4';
+    await useVideoSource(URL.createObjectURL(new Blob([dataUriBytes(pkg.video)], { type })), 'animation générée');
+  }
   if (Array.isArray(pkg.voices) && pkg.voices.length) await useVoiceData(pkg.voices.map((v, i) => ({ name: `phrase ${i + 1}`, data: dataUriBytes(v).buffer })));
   if (pkg.credits) $('#voice-note').textContent = pkg.credits;
 }

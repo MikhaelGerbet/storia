@@ -20,6 +20,10 @@ export interface PipelineOptions {
   voice: string;
   voiceSamplePath?: string;
   workflowPath: string;
+  /** Image déjà faite (par exemple avec Wan 2.2) : remplace celle de ComfyUI. */
+  imagePath?: string;
+  /** Animation en boucle déjà faite (MP4 ou WebM), jouée à la place de l'image. */
+  videoPath?: string;
   withVoice: boolean;
   withImage: boolean;
   outDir: string;
@@ -96,6 +100,19 @@ function shuffled<T>(items: T[]): T[] {
 }
 
 const IMAGE_EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
+const MIME_OF: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.webm': 'video/webm' };
+
+async function readMedia(file: string, kind: 'image' | 'video'): Promise<{ bytes: Uint8Array; mime: string; name: string }> {
+  const mime = MIME_OF[path.extname(file).toLowerCase()];
+  if (!mime?.startsWith(kind)) {
+    throw new Error(kind === 'image' ? `Image non reconnue : ${file}. Formats possibles : PNG, JPG, WebP.` : `Animation non reconnue : ${file}. Formats possibles : MP4, WebM.`);
+  }
+  try {
+    return { bytes: await readFile(file), mime, name: path.basename(file) };
+  } catch {
+    throw new Error(`${kind === 'image' ? 'Image' : 'Animation'} introuvable : ${file}`);
+  }
+}
 const LETTERS = 'ABCDEFGH';
 
 /** Une voix pour toute la scène : un WAV par segment, les pauses recalées sur sa lecture, et son bilan. */
@@ -124,7 +141,10 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
 
   // On vérifie tout ce qui est local avant de solliciter les modèles.
   const template = await readFile(o.playerPath, 'utf8');
-  const workflowRaw = o.withImage
+  const givenImage = o.imagePath ? await readMedia(o.imagePath, 'image') : undefined;
+  const video = o.videoPath ? await readMedia(o.videoPath, 'video') : undefined;
+  if (video && video.bytes.length > 60_000_000) o.log(`Attention : l'animation pèse ${Math.round(video.bytes.length / 1e6)} Mo, la page sera lourde à ouvrir.`);
+  const workflowRaw = o.withImage && !givenImage
     ? await readJsonFile(o.workflowPath, `Workflow d'image introuvable : ${o.workflowPath}. Exporte-le depuis ComfyUI (voir le README du générateur), ou lance avec --sans-image.`)
     : null;
   const voiceSample = o.voiceSamplePath ? { bytes: await readFile(o.voiceSamplePath), name: path.basename(o.voiceSamplePath) } : undefined;
@@ -186,6 +206,7 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     return sets;
   })();
   const imageTask = (async () => {
+    if (givenImage) return givenImage;
     if (!workflowRaw) return null;
     const seed = o.seed ?? Math.floor(Math.random() * 2 ** 32);
     const image = await generateImage({ url: o.comfyUrl, workflow: prepareWorkflow(workflowRaw, prompt, seed) });
@@ -202,6 +223,8 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
   await writeFile(path.join(folder, 'prompt-image.txt'), `${prompt}\n`);
   if (image) await writeFile(path.join(folder, `image.${IMAGE_EXT[image.mime] ?? 'png'}`), image.bytes);
   const imageUri = image ? toDataUri(image.bytes, image.mime) : undefined;
+  if (video) await writeFile(path.join(folder, `animation${path.extname(video.name).toLowerCase()}`), video.bytes);
+  const videoUri = video ? toDataUri(video.bytes, video.mime) : undefined;
 
   const voiceCredit = !o.withVoice ? 'celle du navigateur' : voiceSample ? `imitée de ${voiceSample.name}` : `« ${o.voice} »`;
   const page = (set: VoiceSet | undefined, credits: string): StoryPackage => ({
@@ -213,10 +236,11 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     credits,
     effects: { waterline: o.waterline },
     image: imageUri,
+    video: videoUri,
     voices: set?.voices.length ? set.voices.map((v) => toDataUri(v, 'audio/wav')) : undefined,
     createdAt: new Date().toISOString(),
   });
-  const imageCredit = o.withImage ? 'ComfyUI' : 'illustration provisoire';
+  const imageCredit = video ? `animation ${video.name}` : givenImage ? givenImage.name : o.withImage ? 'ComfyUI' : 'illustration provisoire';
   const textCredit = o.sceneFile ? path.basename(o.sceneFile) : o.model;
 
   const saveVoice = async (set: VoiceSet, dir: string) => {

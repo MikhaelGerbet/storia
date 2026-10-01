@@ -22,6 +22,9 @@ Options :
   --voix <nom>           voix Pocket TTS (défaut : estelle)
   --voix-fichier <wav>   extrait d'une voix à imiter, dont tu as les droits
   --workflow <json>      workflow ComfyUI au format API (défaut : workflow-image.json)
+  --image <fichier>      image déjà faite (PNG, JPG, WebP), à la place de ComfyUI
+  --animation <fichier>  animation en boucle (MP4, WebM), par exemple faite avec Wan 2.2,
+                         jouée à la place de l'image
   --sans-voix            garde la voix du navigateur
   --sans-image           garde l'illustration provisoire
   --ligne-eau <nombre>   hauteur de la surface de l'eau sur l'image, de 0.3 à 0.9 (défaut : 0.62)
@@ -43,6 +46,8 @@ async function main(): Promise<void> {
       voix: { type: 'string', default: 'estelle' },
       'voix-fichier': { type: 'string' },
       workflow: { type: 'string', default: path.join(root, 'workflow-image.json') },
+      image: { type: 'string' },
+      animation: { type: 'string' },
       'sans-voix': { type: 'boolean', default: false },
       'sans-image': { type: 'boolean', default: false },
       'ligne-eau': { type: 'string', default: '0.62' },
@@ -76,6 +81,8 @@ async function main(): Promise<void> {
     voice: values.voix,
     voiceSamplePath: values['voix-fichier'],
     workflowPath: path.resolve(values.workflow),
+    imagePath: values.image === undefined ? undefined : path.resolve(values.image),
+    videoPath: values.animation === undefined ? undefined : path.resolve(values.animation),
     withVoice: !values['sans-voix'],
     withImage: !values['sans-image'],
     outDir: path.resolve(values.sortie),

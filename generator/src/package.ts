@@ -13,6 +13,8 @@ export interface StoryPackage {
   effects: { waterline: number };
   /** Image en data URI. Absente : l'illustration provisoire est gardée. */
   image?: string;
+  /** Animation en boucle (MP4 ou WebM) en data URI, jouée à la place de l'image. */
+  video?: string;
   /** Une voix par segment, en data URI. Absente : la voix du navigateur est gardée. */
   voices?: string[];
   createdAt: string;

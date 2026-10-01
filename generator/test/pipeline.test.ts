@@ -161,3 +161,20 @@ test('un serveur qui lit la scène entière recale les pauses et rend compte de 
   assert.ok(lines.some((l) => /attention : trop long/.test(l)));
   assert.ok(lines.some((l) => /1 phrase douteuse/.test(l)));
 });
+
+test('une image et une animation déjà faites sont reprises telles quelles, sans ComfyUI', async (t) => {
+  const dir = await tempDir(t);
+  const sceneFile = path.resolve(import.meta.dirname, '..', 'scenes', 'navire-endormi.json');
+  const imagePath = path.join(dir, 'navire.png');
+  const videoPath = path.join(dir, 'boucle.mp4');
+  await writeFile(imagePath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64'));
+  await writeFile(videoPath, Buffer.from('fausse vidéo'));
+  // ComfyUI et la voix sont injoignables : rien ne doit les appeler
+  const result = await runPipeline(options(dir, 'http://127.0.0.1:9', { sceneFile, withVoice: false, imagePath, videoPath }));
+  const pkg = packageOf(await readFile(path.join(result.folder, 'index.html'), 'utf8'));
+  assert.match(pkg.image, /^data:image\/png;base64,/);
+  assert.equal(pkg.video, `data:video/mp4;base64,${Buffer.from('fausse vidéo').toString('base64')}`);
+  assert.match(pkg.credits, /animation boucle\.mp4/);
+  assert.deepEqual((await readdir(result.folder)).sort(), ['animation.mp4', 'image.png', 'index.html', 'prompt-image.txt', 'scene.json']);
+  await assert.rejects(runPipeline(options(dir, 'http://127.0.0.1:9', { sceneFile, withVoice: false, videoPath: imagePath })), /Animation non reconnue/);
+});
