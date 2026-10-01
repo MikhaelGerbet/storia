@@ -261,6 +261,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    # Git Bash et certaines consoles Windows n'écrivent pas en UTF-8 : un accent ne doit jamais faire planter le journal.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description="Serveur de voix local pour le générateur Storia.")
     parser.add_argument("--moteur", choices=["voxcpm", "chatterbox", "test"], default="voxcpm")
     parser.add_argument("--port", type=int, default=8001)

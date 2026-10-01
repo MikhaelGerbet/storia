@@ -2,10 +2,10 @@
 
 Ce guide part de zéro : récupérer le projet sur ton PC, ouvrir le lecteur, puis faire tourner le générateur avec Ollama, la voix et ComfyUI.
 
-Toutes les commandes se tapent dans **PowerShell** (menu Démarrer, tape « PowerShell »). Quand une étape dit « dans le dossier du projet », commence par :
+Toutes les commandes se tapent dans **PowerShell** (menu Démarrer, tape « PowerShell »). Elles marchent aussi dans **Git Bash** : les chemins y sont écrits avec des barres `/`, que les deux acceptent (Git Bash supprime les barres `\`). Quand une étape dit « dans le dossier du projet », commence par :
 
 ```powershell
-cd $HOME\Documents\storia
+cd $HOME/Documents/storia
 ```
 
 ## 1. Les outils (une seule fois)
@@ -23,7 +23,7 @@ Tu as déjà Ollama. Pour les images, installe **ComfyUI Desktop** depuis <https
 ## 2. Récupérer le projet
 
 ```powershell
-cd $HOME\Documents
+cd $HOME/Documents
 git clone https://github.com/MikhaelGerbet/storia.git
 cd storia
 git checkout claude/story-generator-ai-audio-7xh2ng
@@ -67,7 +67,7 @@ Avant d'installer quoi que ce soit, écoute les démos en ligne listées dans `v
 ### Lancer le générateur
 
 ```powershell
-cd $HOME\Documents\storia\generator
+cd $HOME/Documents/storia/generator
 npm run generer
 ```
 
