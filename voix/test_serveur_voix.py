@@ -65,6 +65,34 @@ class Flaky:
         return self.inner.generate(text)
 
 
+class TorchcodecTests(unittest.TestCase):
+    def test_broken_torchcodec_is_bypassed(self):
+        # torchcodec installé mais incompatible avec PyTorch : son import plante (cas des cartes AMD sous Windows)
+        import tempfile
+
+        root = Path(tempfile.mkdtemp())
+        (root / "torchcodec").mkdir()
+        (root / "torchcodec" / "__init__.py").write_text('raise OSError("Could not load this library: libtorchcodec_image.dll")\n')
+        (root / "transformers" / "pipelines").mkdir(parents=True)
+        (root / "transformers" / "__init__.py").write_text("")
+        (root / "transformers" / "pipelines" / "__init__.py").write_text("")
+        (root / "transformers" / "pipelines" / "automatic_speech_recognition.py").write_text("def is_torchcodec_available():\n    return True\n")
+        saved = {k: v for k, v in sys.modules.items() if k.split(".")[0] in ("torchcodec", "transformers")}
+        for k in saved:
+            del sys.modules[k]
+        sys.path.insert(0, str(root))
+        try:
+            sv.avoid_broken_torchcodec()
+            import transformers.pipelines.automatic_speech_recognition as asr
+
+            self.assertFalse(asr.is_torchcodec_available())
+        finally:
+            sys.path.remove(str(root))
+            for k in [k for k in sys.modules if k.split(".")[0] in ("torchcodec", "transformers")]:
+                del sys.modules[k]
+            sys.modules.update(saved)
+
+
 class TextTests(unittest.TestCase):
     def test_numbers_and_words(self):
         self.assertEqual(sv.spell_number(71), "soixante-et-onze")
@@ -138,6 +166,19 @@ class AudioTests(unittest.TestCase):
         take = narrator.say("Jusqu'à cette nuit.")
         self.assertIn("Whisper a entendu", take.problem)
         self.assertEqual(listener.calls, 2)
+
+    def test_whisper_failure_does_not_stop_reading(self):
+        class Broken:
+            name = "cassé"
+
+            def listen(self, audio, rate, timestamps=True):
+                raise OSError("Could not load this library")
+
+        narrator = sv.Narrator(sv.TestEngine(), Broken(), attempts=2)
+        take = narrator.say("Jusqu'à cette nuit.")
+        self.assertIsNone(take.problem)
+        self.assertIsNone(take.similarity)
+        self.assertIsNone(narrator.listener)  # la suite se passe de Whisper
 
     def test_release_then_reload(self):
         class Releasable(sv.TestEngine):

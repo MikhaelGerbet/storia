@@ -507,6 +507,26 @@ class VoxCPMEngine:
 # --------------------------------------------------------------------------- relecture et récit
 
 
+def avoid_broken_torchcodec() -> None:
+    """transformers importe torchcodec dès qu'il est installé, et VoxCPM2 l'installe. Mais sa version ne colle pas
+    toujours à PyTorch (celui des cartes AMD, par exemple) : l'import plante alors. Whisper n'en a pas besoin,
+    puisqu'on lui donne le son déjà décodé : on lui dit de s'en passer."""
+    try:
+        import torchcodec  # noqa: F401
+        return
+    except ImportError:
+        return  # pas installé : transformers ne le cherchera pas
+    except Exception as err:
+        reason = f"{type(err).__name__} : {str(err)[:120]}"
+    try:
+        import transformers.pipelines.automatic_speech_recognition as asr
+
+        asr.is_torchcodec_available = lambda: False
+        print(f"torchcodec ne marche pas avec ce PyTorch ({reason}) : Whisper s'en passe, il n'en a pas besoin ici.")
+    except Exception:
+        pass
+
+
 class Listener:
     """Whisper relit chaque lecture : on sait ce que la voix a vraiment dit, et quand chaque mot commence."""
 
@@ -520,6 +540,7 @@ class Listener:
         import torch
         from transformers import pipeline
 
+        avoid_broken_torchcodec()
         dtype = torch.float16 if self.device == "cuda" else torch.float32
         last: Exception | None = None
         for extra in ({"dtype": dtype}, {"torch_dtype": dtype}, {}):  # le nom du réglage a changé selon les versions
@@ -599,7 +620,12 @@ class Narrator:
         elif longest > 1.8:
             take.problem, take.score = f"un silence de {longest:.1f} s au milieu", 1.8 / longest
         if self.listener:
-            take.heard, take.words = self.listener.listen(audio, rate)
+            try:
+                take.heard, take.words = self.listener.listen(audio, rate)
+            except Exception as err:  # la vérification ne doit jamais empêcher de lire
+                print(f"Whisper a échoué ({type(err).__name__} : {err}). La suite est jugée sur la seule durée.", flush=True)
+                self.listener = None
+                return take
             take.similarity = resemblance(text, take.heard)
             take.score *= take.similarity
             needed = 0.7 if letter_count(text) < 15 else 0.8
@@ -676,8 +702,12 @@ class Narrator:
             return False
         import librosa
 
-        audio, rate = librosa.load(str(path), sr=16000, mono=True)
-        heard, _ = self.listener.listen(audio, rate, timestamps=False)
+        try:
+            audio, rate = librosa.load(str(path), sr=16000, mono=True)
+            heard, _ = self.listener.listen(audio, rate, timestamps=False)
+        except Exception as err:
+            print(f"L'extrait de voix n'a pas pu être vérifié ({type(err).__name__} : {err}) : la voix est imitée sans sa transcription, ce qui est plus sûr.")
+            return False
         similarity = resemblance(transcript, heard)
         if similarity >= 0.85:
             print(f"L'extrait de voix dit bien sa transcription ({similarity:.0%}) : imitation la plus fidèle.")
@@ -880,8 +910,10 @@ def main() -> None:
         print(f"Relecture : chargement de Whisper ({args.relecture}). Au premier lancement, il se télécharge (environ 1,6 Go).", flush=True)
         try:
             listener = Listener(args.relecture, engine.device)
+            listener.listen(np.zeros(8000, dtype=np.float32), 16000)  # essai à blanc : un souci se voit dès maintenant
         except Exception as err:
-            print(f"Whisper n'a pas pu se charger ({type(err).__name__} : {err}). Les lectures seront jugées sur leur seule durée.")
+            print(f"Whisper ne marche pas ici ({type(err).__name__} : {err}). Les lectures seront jugées sur leur seule durée.")
+            listener = None
     narrator = Narrator(engine, listener, args.essais)
 
     if isinstance(engine, VoxCPMEngine):
