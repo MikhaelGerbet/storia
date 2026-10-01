@@ -7,6 +7,7 @@ donc de moteur sans changer de code : il suffit de changer d'adresse (--tts).
 
 Exemples :
   python serveur_voix.py --voix-ref references/conteur.wav --voix-ref-texte texte-de-reference.txt
+  python serveur_voix.py --voix-ref references/conteur-ia.wav --creer-voix "A warm, deep male storyteller voice"
   python serveur_voix.py --moteur chatterbox --voix-ref references/conteur.wav
   python serveur_voix.py --moteur test     (son de test, pour vérifier l'installation)
 """
@@ -159,7 +160,7 @@ class VoxCPMEngine:
 
     label = "VoxCPM2"
 
-    def __init__(self, device: str, reference: Path | None, reference_text: str | None, style: str, cfg_value: float, steps: int, badcase_ratio: float):
+    def __init__(self, device: str, reference: Path | None, reference_text: str | None, style: str, cfg_value: float, steps: int, badcase_ratio: float, design: str | None = None):
         try:
             import torch
             from voxcpm import VoxCPM
@@ -179,8 +180,31 @@ class VoxCPMEngine:
         # Une narration posée dépasse souvent 6, le seuil par défaut : on le relève pour éviter des reprises inutiles.
         self.badcase_ratio = badcase_ratio
         self.lock = threading.Lock()
+        if design and reference is not None and not reference.is_file():
+            self.design_voice(design, reference)
+        elif design:
+            print(f"Voix déjà créée : {reference}. Pour en créer une autre, supprime ce fichier ou choisis un autre nom.")
         if reference is None:
-            print("Sans --voix-ref, VoxCPM2 invente une voix à chaque phrase : donne un extrait de voix française pour une voix stable.")
+            print("Sans --voix-ref, VoxCPM2 invente une voix à chaque phrase : enregistre un extrait de voix, ou crées-en une avec --creer-voix (voir voix/README.md).")
+
+    def design_voice(self, description: str, target: Path) -> None:
+        """Invente une voix d'après sa description, lui fait lire le texte de référence, et garde cette lecture comme extrait."""
+        if not self.reference_text:
+            sys.exit("--creer-voix a besoin d'un texte à lire : donne-le avec --voix-ref-texte.")
+        print(f"Création de la voix « {description} » : lecture du texte de référence…", flush=True)
+        started = time.perf_counter()
+        with self.lock:
+            audio = self.model.generate(
+                text=f"({description.strip().strip('()')}){self.reference_text}",
+                cfg_value=self.cfg_value,
+                inference_timesteps=max(self.steps, 16),  # une seule fois, et toutes les phrases en héritent : on soigne
+                retry_badcase_ratio_threshold=self.badcase_ratio,
+            )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(wav_bytes(audio, self.sample_rate))
+        target.with_suffix(".txt").write_text(self.reference_text + "\n", encoding="utf-8")
+        print(f"Voix créée en {time.perf_counter() - started:.0f} s : {target.resolve()}")
+        print("Écoute ce fichier. Si la voix ne te plaît pas, supprime-le et relance : chaque création donne une voix différente.")
 
     def synthesize(self, text: str, reference: Path | None) -> bytes:
         ref = reference or self.default_reference
@@ -283,6 +307,7 @@ def main() -> None:
     parser.add_argument("--hote", default="127.0.0.1")
     parser.add_argument("--voix-ref", type=Path, help="extrait WAV ou MP3 (10 à 20 s) d'une voix française dont tu as les droits")
     parser.add_argument("--voix-ref-texte", type=Path, help="fichier texte : transcription exacte de l'extrait (clonage plus fidèle, VoxCPM2)")
+    parser.add_argument("--creer-voix", metavar="DESCRIPTION", help="VoxCPM2 : invente une voix d'après une description (en anglais de préférence) et l'enregistre dans --voix-ref, si ce fichier n'existe pas encore")
     parser.add_argument("--style", default="", help="VoxCPM2 : consigne ajoutée devant chaque phrase, par exemple « (warm storyteller, calm and slow) »")
     parser.add_argument("--etapes", type=int, default=10, help="VoxCPM2 : étapes de génération, plus = meilleur mais plus lent (défaut 10)")
     parser.add_argument("--seuil-reprise", type=float, default=10.0, help="VoxCPM2 : recommence une phrase si son audio dure plus de N fois le texte (défaut 10 ; 6 dans VoxCPM2)")
@@ -291,8 +316,18 @@ def main() -> None:
     parser.add_argument("--temperature", type=float, default=0.8, help="Chatterbox : variété d'une lecture à l'autre")
     parser.add_argument("--appareil", choices=["auto", "cpu", "cuda"], default="auto", help="« cuda » désigne aussi une carte AMD avec PyTorch ROCm")
     args = parser.parse_args()
-    if args.voix_ref is not None and not args.voix_ref.is_file():
-        sys.exit(f"Extrait de voix introuvable : {args.voix_ref}")
+    here = Path(__file__).resolve().parent
+    if args.creer_voix:
+        if args.moteur != "voxcpm":
+            sys.exit("--creer-voix ne marche qu'avec VoxCPM2.")
+        args.voix_ref = args.voix_ref or here / "references" / "voix-creee.wav"
+    elif args.voix_ref is not None and not args.voix_ref.is_file():
+        sys.exit(f"Extrait de voix introuvable : {args.voix_ref}\nEnregistre-le, ou crée une voix avec --creer-voix (voir voix/README.md).")
+    if args.voix_ref_texte is None and args.voix_ref is not None:
+        if args.voix_ref.with_suffix(".txt").is_file():
+            args.voix_ref_texte = args.voix_ref.with_suffix(".txt")  # transcription rangée à côté de l'extrait
+        elif args.creer_voix:
+            args.voix_ref_texte = here / "texte-de-reference.txt"
     reference_text = None
     if args.voix_ref_texte is not None:
         if not args.voix_ref_texte.is_file():
@@ -304,7 +339,7 @@ def main() -> None:
     elif args.moteur == "chatterbox":
         engine = ChatterboxEngine(args.appareil, args.voix_ref, args.expressivite, 0.4 if args.cfg is None else args.cfg, args.temperature)
     else:
-        engine = VoxCPMEngine(args.appareil, args.voix_ref, reference_text, args.style, 2.0 if args.cfg is None else args.cfg, args.etapes, args.seuil_reprise)
+        engine = VoxCPMEngine(args.appareil, args.voix_ref, reference_text, args.style, 2.0 if args.cfg is None else args.cfg, args.etapes, args.seuil_reprise, args.creer_voix)
     Handler.engine = engine
     Handler.cache_dir = Path(tempfile.mkdtemp(prefix="storia-voix-"))
     server = ThreadingHTTPServer((args.hote, args.port), Handler)

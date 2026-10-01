@@ -31,9 +31,11 @@ Les moteurs imitent la voix d'un court extrait. Sans extrait, la voix change d'u
 1. Crée le dossier : `mkdir voix/references`. Il n'est jamais envoyé sur GitHub.
 2. Dans l'Enregistreur audio de Windows, choisis le format WAV dans les paramètres.
 3. Lis le texte de `voix/texte-de-reference.txt`, environ 25 secondes, comme si tu le racontais à un enfant : posé, chaleureux, avec la question et la réponse murmurée. Pièce calme, micro à 20 ou 30 cm, sans musique.
-4. Coupe les blancs au début et à la fin, puis enregistre sous `voix/references/conteur.wav`.
+4. Coupe les blancs au début et à la fin, puis enregistre sous `voix/references/conteur.wav`. Un MP3 marche aussi : remplace alors `.wav` par `.mp3` dans les commandes.
 
 Ce texte est original, et sa transcription exacte est fournie, ce qui rend le clonage plus fidèle. Évite les textes célèbres (poèmes, chansons) : le modèle a tendance à les continuer au lieu de lire ta phrase. N'utilise jamais la voix de quelqu'un sans son accord.
+
+Pas envie d'enregistrer ? VoxCPM2 peut aussi inventer une voix : voir « Créer une voix sans l'enregistrer » plus bas.
 
 Toutes les commandes suivantes se tapent dans PowerShell, depuis le dossier du projet (`cd $HOME/Documents/storia`). Elles marchent aussi dans Git Bash, car les chemins utilisent des barres `/`. Chaque moteur a son propre environnement Python (dossier `.venv-…`), pour éviter les conflits de versions.
 
@@ -62,6 +64,19 @@ Réglages utiles :
 | `--style "(warm storyteller, calm and slow)"` | Consigne de ton ajoutée devant chaque phrase. Essaie aussi « (soft, mysterious whisper) ». |
 | `--etapes 16` | Meilleure qualité, plus lent (défaut 10) |
 | `--cfg 2.5` | Suit plus fidèlement la voix et le style (défaut 2.0) |
+
+### Créer une voix sans l'enregistrer
+
+VoxCPM2 sait inventer une voix d'après une description. Le serveur lui fait lire le texte de référence avec cette voix, une seule fois, et garde l'enregistrement : toutes les phrases reprennent ensuite ce timbre. C'est une voix de synthèse, qui n'imite personne.
+
+```bash
+./.venv-voxcpm/Scripts/python voix/serveur_voix.py --voix-ref voix/references/conteur-ia.wav --creer-voix "A warm, deep male storyteller voice, calm and gentle"
+```
+
+Écoute `voix/references/conteur-ia.wav`. Si la voix ne te plaît pas, supprime le fichier et relance : chaque création donne une voix différente. Relancée telle quelle, la commande réutilise la voix déjà créée ; change le nom du fichier pour en garder plusieurs. Écris la description en anglais, comme dans les exemples de VoxCPM2 :
+
+- `A soft, warm female storyteller voice, gentle and expressive, slow pace`
+- `An elderly man with a kind, slightly husky voice, telling a bedtime story`
 
 ### Sur la carte graphique AMD
 
