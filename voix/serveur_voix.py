@@ -541,6 +541,12 @@ class Listener:
         from transformers import pipeline
 
         avoid_broken_torchcodec()
+        try:  # transformers prévient de changements à venir qui ne nous concernent pas : on garde le journal lisible
+            from transformers.utils import logging as hf_logging
+
+            hf_logging.set_verbosity_error()
+        except Exception:
+            pass
         dtype = torch.float16 if self.device == "cuda" else torch.float32
         last: Exception | None = None
         for extra in ({"dtype": dtype}, {"torch_dtype": dtype}, {}):  # le nom du réglage a changé selon les versions
