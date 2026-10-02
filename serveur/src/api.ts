@@ -1,10 +1,11 @@
 // L'API du studio, les fichiers des histoires et l'application, sur un seul port (node:http, sans framework).
 import { createReadStream } from 'node:fs';
-import { rm, stat } from 'node:fs/promises';
+import { readFile, rm, stat } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { DUREES, KINDS, checkComposition, drawComposition, findIngredient, findTheme, publicCatalogue } from '../../generator/src/catalogue.ts';
 import type { Composition, Duree } from '../../generator/src/catalogue.ts';
+import { PACKAGE_SLOT } from '../../generator/src/package.ts';
 import { AGE_BANDS, AGE_PROFILES } from '../../generator/src/scene.ts';
 import type { AgeBand } from '../../generator/src/scene.ts';
 import type { Library, StoryRecord } from './bibliotheque.ts';
@@ -53,7 +54,8 @@ export const AGES = AGE_BANDS.map((id) => ({ id, label: AGE_PROFILES[id].label }
 /** Une histoire telle que l'application la montre, avec les adresses de ses fichiers. */
 export function storyCard(r: StoryRecord, withText = false) {
   const base = `/bibliotheque/${encodeURIComponent(r.dossier)}/`;
-  const { texte, dossier: _, ...rest } = r;
+  // Les noms de fichiers restent au studio : l'application reçoit des adresses.
+  const { texte, dossier: _dossier, image: _image, animation: _animation, page: _page, ...rest } = r;
   return {
     ...rest,
     couverture: r.image ? base + encodeURIComponent(r.image) : null,
@@ -144,6 +146,27 @@ async function sendFile(req: http.IncomingMessage, res: http.ServerResponse, fil
   if (req.method === 'HEAD') res.end();
   else createReadStream(file).pipe(res);
   return true;
+}
+
+const PACKAGE_BLOCK = /<script id="storia-package" type="application\/json">[\s\S]*?<\/script>/;
+
+/**
+ * Une page d'histoire avec la version actuelle du lecteur : on garde l'histoire (son paquet) et on change le reste.
+ * Les histoires déjà faites profitent ainsi des améliorations du lecteur. En cas de doute, la page d'origine.
+ */
+export async function renderStoryPage(file: string, playerPath: string): Promise<string> {
+  const page = await readFile(file, 'utf8');
+  const block = PACKAGE_BLOCK.exec(page)?.[0];
+  let template: string;
+  try {
+    template = await readFile(playerPath, 'utf8');
+  } catch {
+    return page;
+  }
+  if (!block || block === PACKAGE_SLOT || !template.includes(PACKAGE_SLOT)) return page;
+  const title = /<title>[^<]*<\/title>/.exec(page)?.[0];
+  const rendered = template.replace(PACKAGE_SLOT, () => block);
+  return title ? rendered.replace(/<title>[^<]*<\/title>/, () => title) : rendered;
 }
 
 const NO_APP = `<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -349,6 +372,18 @@ export function createApi(o: ApiOptions): http.Server {
     }
     const safe = parts.length >= 2 && parts.every((p) => p && p !== '.' && p !== '..' && !/[\\/\0]/.test(p)) && /^[\w-]+$/.test(parts[0]);
     const file = path.join(libraryDir, ...parts);
+    if (safe && file.startsWith(libraryDir + path.sep) && parts.length === 2 && file.endsWith('.html')) {
+      let html: string | null = null;
+      try {
+        html = await renderStoryPage(file, config.lecteur);
+      } catch {
+        html = null; // fichier absent
+      }
+      if (html !== null) {
+        res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-cache', 'content-length': Buffer.byteLength(html) });
+        return res.end(req.method === 'HEAD' ? undefined : html);
+      }
+    }
     if (safe && file.startsWith(libraryDir + path.sep) && (await sendFile(req, res, file, 'no-cache'))) return;
     sendJson(res, 404, { erreur: 'Fichier introuvable.' });
   };

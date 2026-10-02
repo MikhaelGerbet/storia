@@ -1,8 +1,10 @@
 // Le studio Storia : npm start, puis ouvre http://localhost:3000
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
+import type http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { findWan } from '../../generator/src/wan.ts';
 import type { WanInstall } from '../../generator/src/wan.ts';
 import { createApi } from './api.ts';
@@ -24,10 +26,18 @@ function lanAddresses(): string[] {
     .map((a) => (a as os.NetworkInterfaceInfo).address);
 }
 
-async function main(): Promise<void> {
+export interface RunningStudio {
+  config: Config;
+  library: Library;
+  studio: Studio;
+  server: http.Server;
+}
+
+/** Démarre le studio avec ces options ; null quand l'aide a été affichée. */
+export async function startStudio(args: string[], banner = 'Storia est prêt'): Promise<RunningStudio | null> {
   let config: Config | null;
   try {
-    config = readConfig(process.argv.slice(2));
+    config = readConfig(args);
   } catch (err) {
     console.error((err as Error).message);
     console.error('La liste des options : npm start -- --aide');
@@ -35,7 +45,7 @@ async function main(): Promise<void> {
   }
   if (!config) {
     console.log(HELP);
-    return;
+    return null;
   }
   const cfg = config;
 
@@ -93,7 +103,7 @@ async function main(): Promise<void> {
   await new Promise<void>((resolve) => server.listen(cfg.port, cfg.hote, resolve));
 
   const stats = library.stats();
-  console.log(`\nStoria est prêt : http://localhost:${cfg.port}`);
+  console.log(`\n${banner} : http://localhost:${cfg.port}`);
   if (cfg.hote === '0.0.0.0') {
     for (const address of lanAddresses()) console.log(`  Sur une tablette ou un téléphone du même Wi-Fi : http://${address}:${cfg.port}`);
   }
@@ -122,9 +132,12 @@ async function main(): Promise<void> {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+  return { config: cfg, library, studio, server };
 }
 
-main().catch((err: Error) => {
-  console.error(err.message);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  startStudio(process.argv.slice(2)).catch((err: Error) => {
+    console.error(err.message);
+    process.exit(1);
+  });
+}

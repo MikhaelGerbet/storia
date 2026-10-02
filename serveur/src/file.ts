@@ -183,9 +183,13 @@ export class Studio {
   }
 
   async view(id: string): Promise<CreationView | null> {
-    const job = (await this.queue.getJob(id)) as CreationJob | undefined;
+    let job = (await this.queue.getJob(id)) as CreationJob | undefined;
     if (!job) return null;
     const state = await job.getState();
+    if ((state === 'completed' || state === 'failed') && !job.finishedOn) {
+      // Elle s'est terminée entre les deux lectures : sa fiche, lue avant, n'a ni résultat ni raison d'échec.
+      job = ((await this.queue.getJob(id)) as CreationJob | undefined) ?? job;
+    }
     let position: number | null = null;
     if (state === 'waiting' || state === 'prioritized' || state === 'delayed') {
       const waiting = await this.queue.getJobs(['waiting', 'prioritized', 'delayed'], 0, -1, true);
@@ -231,6 +235,11 @@ export class Studio {
   }
 
   async close(): Promise<void> {
-    await this.queue.close();
+    try {
+      await this.queue.close();
+    } catch {
+      // Redis s'est arrêté avant nous : on coupe la connexion sans attendre sa réponse.
+      await Promise.race([this.queue.disconnect().catch(() => {}), new Promise((resolve) => setTimeout(resolve, 1000))]);
+    }
   }
 }

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <!-- Remplacé par la valeur de --base-href à la compilation (« / » par défaut). -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="Storia : invente une histoire avec ton enfant, écoute-la, retrouve-la dans ta bibliothèque.">
+  <meta name="theme-color" content="#060a14">
+  <meta name="color-scheme" content="dark">
+
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Storia">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="manifest" href="manifest.json">
+  <title>Storia</title>
+
+  <style>
+    /* Écran d'attente, le temps que l'application se charge : le même ciel de nuit. */
+    @font-face { font-family: "Fraunces"; font-weight: 900; src: url("assets/assets/fonts/Fraunces-900.ttf") format("truetype"); font-display: swap; }
+    html, body { margin: 0; height: 100%; background: #060a14; }
+    #splash {
+      position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; align-content: center; gap: 18px;
+      background: radial-gradient(circle at 15% 0%, rgba(59, 79, 168, 0.35), transparent 55%),
+                  radial-gradient(circle at 95% 30%, rgba(122, 62, 140, 0.25), transparent 50%),
+                  linear-gradient(180deg, #0d1633, #060a14 55%, #05070f);
+      transition: opacity 0.5s ease, visibility 0.5s;
+      font-family: "Fraunces", Georgia, serif; color: #f2f4fa;
+    }
+    #splash.is-done { opacity: 0; visibility: hidden; }
+    #splash img { width: 104px; height: 104px; border-radius: 26px; box-shadow: 0 20px 60px rgba(242, 166, 90, 0.25); animation: float 3.2s ease-in-out infinite; }
+    #splash p { margin: 0; font-size: 34px; font-weight: 900; letter-spacing: -0.5px; }
+    #splash .dots { display: flex; gap: 8px; }
+    #splash .dots span { width: 9px; height: 9px; border-radius: 50%; background: #f2a65a; animation: pulse 1.2s ease-in-out infinite; }
+    #splash .dots span:nth-child(2) { animation-delay: 0.15s; }
+    #splash .dots span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes float { 50% { transform: translateY(-8px) rotate(-2deg); } }
+    @keyframes pulse { 50% { opacity: 0.25; transform: scale(0.7); } }
+    @media (prefers-reduced-motion: reduce) { #splash img, #splash .dots span { animation: none; } }
+  </style>
+</head>
+<body>
+  <div id="splash" aria-live="polite">
+    <img src="icons/Icon-192.png" alt="">
+    <p>Storia</p>
+    <div class="dots" aria-label="Chargement"><span></span><span></span><span></span></div>
+  </div>
+  <script>
+    // Flutter annonce sa première image : l'écran d'attente s'efface.
+    window.addEventListener('flutter-first-frame', () => {
+      const splash = document.getElementById('splash');
+      splash.classList.add('is-done');
+      setTimeout(() => splash.remove(), 600);
+    });
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

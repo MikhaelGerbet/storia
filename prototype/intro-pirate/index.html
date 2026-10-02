@@ -41,6 +41,8 @@ body {
 #scene, #sparks { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 #sparks { pointer-events: none; }
 #film { position: fixed; inset: 0; overflow: hidden; background: #000; }
+/* Dans l'application Storia : pas d'outils de prototype. */
+.embed #mine, .embed #drop-hint { display: none !important; }
 #film video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.8s linear; z-index: 1; }
 #film video.is-on { opacity: 1; }
 #film video.is-top { z-index: 2; }
@@ -264,6 +266,12 @@ const PKG = (() => {
   try { return JSON.parse(document.getElementById('storia-package').textContent || 'null'); } catch (e) { return null; }
 })();
 const SCENE = PKG && PKG.scene ? PKG.scene : DEFAULT_SCENE;
+
+// Dans l'application Storia (?app) : le lecteur dit à l'application quand l'histoire commence, finit, ou quand on la quitte.
+const PARAMS = new URLSearchParams(location.search);
+const EMBED = PARAMS.has('app');
+if (EMBED) document.documentElement.classList.add('embed');
+const notify = (type) => { if (EMBED && window.parent !== window) window.parent.postMessage({ type }, location.origin); };
 
 /* =========================================================================
    2. OUTILS
@@ -1665,7 +1673,7 @@ const CUES = {
   creak: () => { audio.creak(audio.now(), 1, 0.55); audio.creak(audio.now() + 1.25, 0.86, 0.35); },
   lantern: () => { audio.ignite(audio.now()); audio.shimmer(audio.now() + 0.2); tween('lantern', 1, 1.3, 0, easeOut); },
   bell: () => { audio.bell(audio.now()); audio.bell(audio.now() + 1.7, 0.08); },
-  endCard: () => { $('#stop').hidden = true; showScreen($('#end')); releaseWakeLock(); },
+  endCard: () => { $('#stop').hidden = true; showScreen($('#end')); releaseWakeLock(); notify('storia:fin'); },
 };
 
 function fire(at, when = 'start') {
@@ -1724,6 +1732,7 @@ async function play() {
   if (!alive()) return;
   hideScreen($('#start')); hideScreen($('#end'));
   $('#stop').hidden = false;
+  notify('storia:lecture');
   requestWakeLock();
   dripCount = 0;
   tweens = [];
@@ -1995,7 +2004,14 @@ function dataUriBytes(uri) {
 async function applyPackage(pkg) {
   document.title = pkg.scene.title;
   $('#start-title').textContent = pkg.scene.title;
-  $('#start .eyebrow').textContent = `Générée sur ton PC · ${pkg.audienceLabel || pkg.scene.audience || ''}`;
+  const audience = pkg.audienceLabel || pkg.scene.audience || '';
+  $('#start .eyebrow').textContent = EMBED ? audience.charAt(0).toUpperCase() + audience.slice(1) : `Générée sur ton PC · ${audience}`;
+  if (pkg.scene.theme) {
+    // Une histoire complète, pas l'intro de la grotte : elle se termine vraiment.
+    $('#end .eyebrow').textContent = pkg.scene.title;
+    $('#end-title').textContent = 'Fin';
+    $('#replay').textContent = 'Réécouter';
+  }
   if (pkg.teaser) $('#start .lead').textContent = `${pkg.teaser} Monte le son, ou mieux : mets un casque.`;
   if (pkg.effects && Number.isFinite(pkg.effects.waterline)) $('#waterline').value = String(pkg.effects.waterline);
   if (!pkg.image && !pkg.video && pkg.scene.theme && pkg.scene.theme !== 'pirates') {
@@ -2019,7 +2035,8 @@ $('#opt-subs').addEventListener('change', (e) => { savePref('subs', e.target.che
 $('#opt-music').addEventListener('change', (e) => { savePref('music', e.target.checked); if (audio) audio.setMusic(e.target.checked); });
 $('#play').addEventListener('click', play);
 $('#replay').addEventListener('click', () => { stop(false); play(); });
-$('#back').addEventListener('click', () => stop(true));
+$('#back').addEventListener('click', () => (EMBED ? notify('storia:fermer') : stop(true)));
+if (EMBED) $('#back').textContent = 'Retour';
 $('#stop').addEventListener('click', () => stop(true));
 $('#file-image').addEventListener('change', (e) => { if (e.target.files.length) handleFiles(e.target.files); });
 $('#file-voice').addEventListener('change', (e) => { if (e.target.files.length) handleFiles(e.target.files); });
@@ -2028,7 +2045,7 @@ $('#reset-mine').addEventListener('click', resetMine);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#stop').hidden) stop(true); });
 
 let dragDepth = 0;
-const hasFiles = (e) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+const hasFiles = (e) => !EMBED && !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
 addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; $('#drop-hint').hidden = false; });
 addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
 addEventListener('dragleave', (e) => { if (!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('#drop-hint').hidden = true; });
@@ -2038,6 +2055,16 @@ addEventListener('drop', (e) => {
   if (!$('#stop').hidden) stop(true);
   handleFiles(e.dataTransfer.files);
 });
+
+// Ouvert depuis l'application (?app&auto) : l'histoire démarre seule si le navigateur laisse jouer le son,
+// sinon la carte de départ attend un geste.
+if (EMBED && PARAMS.has('auto')) {
+  packageReady.then(async () => {
+    ensureAudio();
+    try { await Promise.race([audio.resume(), wait(0.5)]); } catch (e) { /* on attendra un geste */ }
+    if (audio.ctx.state === 'running' && !$('#start').hidden) play();
+  });
+}
 
 // Accès pour les tests automatisés.
 window.__storia = { SCENE, AudioEngine, findCuts, computeView, vis };

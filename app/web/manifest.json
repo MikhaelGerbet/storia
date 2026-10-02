@@ -1,0 +1,17 @@
+{
+  "name": "Storia",
+  "short_name": "Storia",
+  "description": "Invente une histoire avec ton enfant, écoute-la, retrouve-la dans ta bibliothèque.",
+  "lang": "fr",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#060a14",
+  "theme_color": "#060a14",
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "icons/Icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/Icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/Icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/Icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { test } from 'node:test';
 import { SAMPLE_STORY, startMockServices } from '../../generator/test/mock-services.ts';
-import { createApi } from '../src/api.ts';
+import { createApi, renderStoryPage } from '../src/api.ts';
 import { Library } from '../src/bibliotheque.ts';
 import type { Config } from '../src/config.ts';
 import { Studio, redisOptions } from '../src/file.ts';
@@ -44,18 +44,19 @@ async function call(base: string, method: string, url: string, body?: unknown): 
 }
 
 test('de la demande à la bibliothèque, avec la vraie chaîne de fabrication', { skip: !HAS_REDIS }, async (t) => {
-  const redis = await startRedis(t);
+  const redis = await startRedis();
   const dir = await tempDir(t);
   const mock = await startMockServices({ draft: SAMPLE_STORY, narration: {} });
   t.after(() => mock.close());
-  const config = testConfig({ redis, bibliotheque: path.join(dir, 'bibliotheque'), ollama: mock.url, tts: mock.url });
+  const config = testConfig({ redis: redis.url, bibliotheque: path.join(dir, 'bibliotheque'), ollama: mock.url, tts: mock.url });
   const library = new Library(':memory:');
-  const connection = redisOptions(redis);
+  const connection = redisOptions(redis.url);
   const studio = new Studio(connection);
   studio.worker = startWorker({ connection, config, library, wan: null, log: () => {} });
   t.after(async () => {
     await studio.worker?.close(true);
     await studio.close();
+    redis.stop();
   });
   const base = await serve(t, config, library, studio);
 
@@ -169,4 +170,18 @@ test('l’API se protège : JSON obligatoire, origines locales seulement, Redis 
   assert.equal((await call(base, 'GET', '/api/inconnue')).status, 404);
   assert.equal((await call(base, 'DELETE', '/api/catalogue')).status, 405);
   assert.deepEqual((await call(base, 'GET', '/api/sante')).data, HEALTHY);
+});
+
+test('une page d’histoire est servie avec la version actuelle du lecteur', async (t) => {
+  const dir = await tempDir(t);
+  const pkg = '<script id="storia-package" type="application/json">{"version":1,"scene":{"title":"Vieille histoire"}}</script>';
+  await writeFile(path.join(dir, 'ancienne.html'), `<html><title>Vieille histoire</title><body>ancien lecteur ${pkg}</body></html>`);
+  await writeFile(path.join(dir, 'lecteur.html'), '<html><title>Le Navire endormi</title><body>nouveau lecteur <script id="storia-package" type="application/json">null</script></body></html>');
+  const html = await renderStoryPage(path.join(dir, 'ancienne.html'), path.join(dir, 'lecteur.html'));
+  assert.match(html, /nouveau lecteur/);
+  assert.doesNotMatch(html, /ancien lecteur/);
+  assert.ok(html.includes(pkg)); // l'histoire elle-même ne change pas
+  assert.match(html, /<title>Vieille histoire<\/title>/);
+  // Sans lecteur sous la main, la page d'origine.
+  assert.match(await renderStoryPage(path.join(dir, 'ancienne.html'), path.join(dir, 'absent.html')), /ancien lecteur/);
 });

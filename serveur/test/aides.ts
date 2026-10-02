@@ -25,11 +25,17 @@ async function freePort(): Promise<number> {
   });
 }
 
-/** Lance un Redis jetable, sans sauvegarde sur disque, arrêté à la fin du test. */
-export async function startRedis(t: After): Promise<string> {
+/**
+ * Lance un Redis jetable, sans sauvegarde sur disque. À arrêter avec stop() APRÈS avoir fermé files et travailleurs :
+ * node:test exécute les t.after dans l'ordre où ils sont posés, et une file dont Redis a disparu ferme mal.
+ */
+export async function startRedis(): Promise<{ url: string; stop: () => void }> {
   const port = await freePort();
   const child = spawn('redis-server', ['--port', String(port), '--bind', '127.0.0.1', '--save', '', '--appendonly', 'no'], { stdio: 'ignore' });
-  t.after(() => child.kill());
+  const stop = () => {
+    child.kill();
+  };
+  process.once('exit', stop); // filet de sécurité : jamais de Redis orphelin
   for (let i = 0; i < 100; i++) {
     const ok = await new Promise<boolean>((resolve) => {
       const socket = net.connect(port, '127.0.0.1', () => {
@@ -38,9 +44,10 @@ export async function startRedis(t: After): Promise<string> {
       });
       socket.on('error', () => resolve(false));
     });
-    if (ok) return `redis://127.0.0.1:${port}`;
+    if (ok) return { url: `redis://127.0.0.1:${port}`, stop };
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
+  stop();
   throw new Error('redis-server ne démarre pas');
 }
 

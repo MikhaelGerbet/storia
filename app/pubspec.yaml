@@ -1,0 +1,57 @@
+name: storia
+description: "Storia : invente une histoire, écoute-la, retrouve-la dans ta bibliothèque."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+  flutter: '>=3.32.0'
+
+# Bornes larges : pub choisit les versions qui vont avec ton Flutter.
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
+  go_router: '>=14.8.0 <19.0.0'
+  http: ^1.2.0
+  shared_preferences: ^2.3.0
+  web: ^1.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: '>=5.0.0 <7.0.0'
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/emoji/
+    - assets/fonts/OFL-Fraunces.txt
+    - assets/fonts/OFL-Nunito.txt
+  fonts:
+    # Fraunces « douce » (axe SOFT à 100) : un titrage arrondi, chaleureux, lisible par les enfants.
+    - family: Fraunces
+      fonts:
+        - asset: assets/fonts/Fraunces-600.ttf
+          weight: 600
+        - asset: assets/fonts/Fraunces-700.ttf
+          weight: 700
+        - asset: assets/fonts/Fraunces-800.ttf
+          weight: 800
+        - asset: assets/fonts/Fraunces-900.ttf
+          weight: 900
+    - family: Nunito
+      fonts:
+        - asset: assets/fonts/Nunito-500.ttf
+          weight: 500
+        - asset: assets/fonts/Nunito-600.ttf
+          weight: 600
+        - asset: assets/fonts/Nunito-700.ttf
+          weight: 700
+        - asset: assets/fonts/Nunito-800.ttf
+          weight: 800
+        - asset: assets/fonts/Nunito-900.ttf
+          weight: 900

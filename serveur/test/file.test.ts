@@ -13,13 +13,13 @@ import { HAS_REDIS, fakePipeline, startRedis, tempDir, testConfig, until } from 
 const composition: Composition = { theme: 'espace', heros: 'robot', age: '6-8', duree: 'courte' };
 
 async function setup(t: { after: (fn: () => unknown) => void }, o: { models?: string[] } = {}) {
-  const redis = await startRedis(t);
+  const redis = await startRedis();
   const dir = await tempDir(t);
   const mock = await startMockServices({ draft: {}, models: o.models });
   t.after(() => mock.close());
-  const config = testConfig({ redis, bibliotheque: dir, ollama: mock.url, tts: mock.url });
+  const config = testConfig({ redis: redis.url, bibliotheque: dir, ollama: mock.url, tts: mock.url });
   const library = new Library(':memory:');
-  const connection = redisOptions(redis);
+  const connection = redisOptions(redis.url);
   const studio = new Studio(connection);
   const fake = fakePipeline();
   const worker = startWorker({ connection, config, library, wan: null, log: () => {}, pipeline: fake.pipeline, retryMs: 50 });
@@ -27,6 +27,7 @@ async function setup(t: { after: (fn: () => unknown) => void }, o: { models?: st
   t.after(async () => {
     await worker.close(true);
     await studio.close();
+    redis.stop();
   });
   const view = (id: string) => studio.view(id) as Promise<CreationView>;
   return { studio, library, fake, config, view };
@@ -114,9 +115,12 @@ test('un modèle absent fait échouer la demande avec la commande pour l’insta
 });
 
 test('la file refuse une demande de trop', { skip: !HAS_REDIS }, async (t) => {
-  const redis = await startRedis(t);
-  const studio = new Studio(redisOptions(redis)); // sans travailleur : tout reste en attente
-  t.after(() => studio.close());
+  const redis = await startRedis();
+  const studio = new Studio(redisOptions(redis.url)); // sans travailleur : tout reste en attente
+  t.after(async () => {
+    await studio.close();
+    redis.stop();
+  });
   for (let i = 0; i < 12; i++) await studio.create({ composition, animation: false });
   await assert.rejects(studio.create({ composition, animation: false }), (err: Error & { status?: number }) => err.status === 429);
   const list = await studio.list();
@@ -130,4 +134,16 @@ test('sans Redis, la file le dit au lieu d’attendre', async (t) => {
   const begun = Date.now();
   assert.equal(await studio.ping(500), false);
   assert.ok(Date.now() - begun < 2000);
+});
+
+test('le studio se ferme sans attendre quand Redis s’est arrêté avant lui', { skip: !HAS_REDIS }, async () => {
+  const redis = await startRedis();
+  const studio = new Studio(redisOptions(redis.url));
+  studio.queue.on('error', () => {});
+  assert.equal(await studio.ping(), true);
+  redis.stop();
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const begun = Date.now();
+  await studio.close();
+  assert.ok(Date.now() - begun < 3000);
 });
