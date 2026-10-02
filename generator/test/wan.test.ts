@@ -17,7 +17,10 @@ const args = process.argv.slice(2);
 const settings = JSON.parse(fs.readFileSync(args[args.indexOf('--process') + 1], 'utf8'));
 const out = args[args.indexOf('--output-dir') + 1];
 fs.appendFileSync(path.join(__dirname, 'appels.jsonl'), JSON.stringify({ cwd: process.cwd(), args, settings, miopen: process.env.MIOPEN_FIND_MODE }) + '\\n');
-if (process.env.FAUX_WAN_RATE) process.exit(0);
+if (process.env.FAUX_WAN_RATE) {
+  console.log('[ERROR] Task 1 failed: modèle introuvable');
+  process.exit(0);
+}
 if (process.env.FAUX_WAN_MUET) setInterval(() => {}, 1000); // ne dit plus rien et ne s'arrête jamais
 else {
   if (settings.model_type === 'i2v_2_2') {
@@ -120,7 +123,7 @@ test('Wan2GP qui s’arrête sans rien produire donne un message utile', { skip:
       comfyUrl: 'http://127.0.0.1:9', waterline: 0.62, log: () => {},
       wan: { dir: wan.appDir, imageModel: 'z_image', steps: 4 },
     }),
-    /Wan2GP s'est arrêté \(code 0\) sans produire d'image/,
+    (err: Error) => /Wan2GP s'est arrêté \(code 0\) sans produire d'image/.test(err.message) && /Task 1 failed: modèle introuvable/.test(err.message) && /image\.log/.test(err.message),
   );
 });
 

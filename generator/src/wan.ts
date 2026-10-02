@@ -3,7 +3,7 @@
 // Deux passages : l'image fixe (Z-Image Turbo par défaut), puis la boucle : Wan 2.2 anime l'image en
 // partant d'elle et en revenant à elle (même image au début et à la fin), la vidéo tourne donc en boucle.
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { createWriteStream, existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -133,7 +133,8 @@ export function loopSettings(o: { prompt: string; image: string; seed: number; s
 
 /** Variables d'environnement de Pinokio, pour retrouver ses téléchargements, et réglage AMD. */
 function wanEnv(appDir: string): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, PYTHONIOENCODING: 'utf-8' };
+  // Sans PYTHONUNBUFFERED, Python garde ses messages en mémoire quand on les lit par un tuyau : ils se perdent s'il plante.
+  const env: NodeJS.ProcessEnv = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' };
   env.MIOPEN_FIND_MODE ??= 'FAST'; // cartes AMD : évite une longue recherche de calculs à chaque nouvelle taille
   const home = path.resolve(appDir, '..', '..', '..');
   for (const key of ['HF_HOME', 'TORCH_HOME']) {
@@ -163,6 +164,10 @@ export async function runWan(run: WanRun, name: string, settings: Record<string,
   const settingsPath = path.join(run.jobDir, `${name}.json`);
   await writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
   const started = Date.now();
+  // Tout ce qu'affiche Wan2GP est aussi gardé dans un journal, et ses dernières lignes en mémoire pour un message d'erreur.
+  const logPath = path.join(run.jobDir, `${name}.log`);
+  const logFile = createWriteStream(logPath);
+  let recent = '';
   const { code, stopped } = await new Promise<{ code: number | null; stopped: 'fini' | 'muet' | null }>((resolve, reject) => {
     const child = spawn(run.install.python, ['wgp.py', '--process', forward(settingsPath), '--output-dir', forward(outDir), '--attention', 'sdpa'], {
       cwd: run.install.appDir, // wgp.py lit ses réglages par défaut à partir de son dossier
@@ -184,7 +189,9 @@ export async function runWan(run: WanRun, name: string, settings: Record<string,
     };
     const onData = (chunk: Buffer, out: NodeJS.WriteStream) => {
       if (run.echo) out.write(chunk);
+      logFile.write(chunk);
       alive();
+      recent = (recent + chunk.toString('utf8')).slice(-6000);
       tail = (tail + chunk.toString('utf8')).slice(-500);
       // Sous Windows avec une carte AMD, un processus PyTorch peut rester bloqué au moment de quitter
       // (pytorch/pytorch#160759) : une fois la file terminée, on lui laisse un moment, puis on l'arrête.
@@ -213,9 +220,16 @@ export async function runWan(run: WanRun, name: string, settings: Record<string,
       resolve({ code: exitCode, stopped });
     });
   });
+  await new Promise((resolve) => logFile.end(resolve));
+  // Sous Windows, un code négatif apparaît comme un grand nombre : 4294967295 pour -1.
+  const shownCode = code !== null && code > 0x7fffffff ? code - 0x100000000 : code;
+  const lastLines = recent.split(/\r\n|\r|\n/).map((l) => l.trim()).filter(Boolean).slice(-12);
+  const lastWords = lastLines.length
+    ? `Ses derniers messages :\n${lastLines.map((l) => `      ${l}`).join('\n')}\n`
+    : "Il n'a rien affiché : il s'est sans doute arrêté brutalement (plantage, mémoire épuisée).\n";
   if (stopped === 'fini') run.log?.("    (Wan2GP avait fini mais ne s'arrêtait pas, un défaut connu de PyTorch pour AMD sous Windows : arrêté.)");
   if (stopped === 'muet') {
-    throw new Error(`Wan2GP n'a plus rien affiché pendant ${Math.round((run.silenceMs ?? 30 * 60_000) / 60_000)} minutes : il semblait bloqué, il a été arrêté. Ses réglages sont dans ${settingsPath}.`);
+    throw new Error(`Wan2GP n'a plus rien affiché pendant ${Math.round((run.silenceMs ?? 30 * 60_000) / 60_000)} minutes : il semblait bloqué, il a été arrêté. ${lastWords}Journal complet : ${logPath}`);
   }
   // Un code 0 ne prouve rien : une tâche refusée ou une mise à jour manquante s'arrêtent aussi sans erreur.
   const pattern = want === 'image' ? IMAGE_FILE : VIDEO_FILE;
@@ -227,9 +241,8 @@ export async function runWan(run: WanRun, name: string, settings: Record<string,
   }
   if (!files.length) {
     throw new Error(
-      `Wan2GP s'est arrêté (code ${code}) sans produire ${want === 'image' ? "d'image" : 'de vidéo'}. ` +
-        'Lis ses messages juste au-dessus : modèle à télécharger, mise à jour à faire dans Pinokio, mémoire de la carte insuffisante… ' +
-        `Ses réglages sont dans ${settingsPath}.`,
+      `Wan2GP s'est arrêté (code ${shownCode}) sans produire ${want === 'image' ? "d'image" : 'de vidéo'}. ${lastWords}` +
+        `Journal complet : ${logPath}\nRéglages envoyés : ${settingsPath}`,
     );
   }
   files.sort((a, b) => b.time - a.time);
