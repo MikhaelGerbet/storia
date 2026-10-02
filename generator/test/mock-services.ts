@@ -21,6 +21,27 @@ export const SAMPLE_DRAFT = {
   decor_en: 'Glowworms twinkle like tiny blue stars on the cave ceiling.',
 };
 
+/** Histoire complète écrite d'après une composition (pirates, renarde, île, perroquet, boussole, tempête). */
+export const SAMPLE_STORY = {
+  titre: 'La Boussole qui chantait',
+  accroche: 'Une petite renarde suit une boussole qui fredonne vers une île oubliée.',
+  ambiance: 'mer',
+  segments: [
+    { texte: 'Il était une fois une petite renarde curieuse…', effet: 'aucun' },
+    { texte: 'qui trouva, au fond d’un coffre, une boussole qui chantait.', effet: 'magie' },
+    { texte: 'La boussole fredonnait toujours la même chanson :', effet: 'aucun' },
+    { texte: '« Vers l’île aux trésors, petite renarde ! »', effet: 'vague' },
+    { texte: 'Avec son ami le perroquet, elle prit la mer.', effet: 'vent' },
+    { texte: 'Soudain, une tempête se leva…', effet: 'vent' },
+    { texte: 'La renarde chanta avec la boussole, et le ciel se calma.', effet: 'lumiere' },
+    { texte: 'Sur l’île, un trésor brillait : des étoiles de mer qui riaient.', effet: 'revelation' },
+    { texte: 'Le soir venu, la renarde s’endormit en souriant.', effet: 'cloche' },
+  ],
+  mots_cles: ['Renarde', 'boussole', 'île', 'tempête'],
+  decor_en: 'A little fox on a small sailboat at sunset near a tropical island',
+  mouvement_en: 'The sea gently sways, the sail breathes in the wind, sparkles drift in the air',
+};
+
 /** WAV 16 bits mono comme ceux de Pocket TTS : l'en-tête annonce un milliard d'échantillons. */
 export function streamingWav(seconds: number, rate = 24000, freq = 220): Buffer {
   const n = Math.round(seconds * rate);
@@ -57,6 +78,8 @@ export interface MockOptions {
   wavSeconds?: (text: string) => number;
   /** Sait lire une scène entière (POST /recit), comme voix/serveur_voix.py ; sinon, phrase par phrase seulement. */
   narration?: { alerte?: string };
+  /** Modèles installés dans le faux Ollama (GET /api/tags). */
+  models?: string[];
 }
 
 export async function startMockServices(options: MockOptions): Promise<MockServices> {
@@ -75,6 +98,12 @@ export async function startMockServices(options: MockOptions): Promise<MockServi
       const request = JSON.parse(body.toString()) as { model: string };
       calls.chat.push(request);
       return json(200, { model: request.model, message: { role: 'assistant', content: JSON.stringify(options.draft) }, done: true });
+    }
+    if (req.method === 'GET' && pathname === '/api/tags') {
+      return json(200, { models: (options.models ?? ['mistral-small3.2:latest']).map((name) => ({ name })) });
+    }
+    if (req.method === 'GET' && pathname === '/health') {
+      return json(200, { status: 'ok', moteur: 'faux', recit: Boolean(options.narration) });
     }
     if (req.method === 'POST' && pathname === '/api/generate') {
       calls.unload.push(JSON.parse(body.toString()));

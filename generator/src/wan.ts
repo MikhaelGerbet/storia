@@ -181,6 +181,9 @@ function wanEnv(appDir: string): NodeJS.ProcessEnv {
   return env;
 }
 
+/** Pourquoi Wan2GP a été arrêté : file terminée mais pas de sortie, silence trop long, ou fabrication annulée. */
+type Stop = 'fini' | 'muet' | 'annule';
+
 export interface WanRun {
   install: WanInstall;
   /** Dossier de travail : réglages et résultats de chaque passage. */
@@ -194,10 +197,13 @@ export interface WanRun {
   silenceMs?: number;
   /** Avancement des étapes de calcul, de 0 à 1, lu dans les barres de progression de Wan2GP. */
   onSteps?: (fraction: number) => void;
+  /** Arrête Wan2GP (fabrication annulée). */
+  signal?: AbortSignal;
 }
 
 /** Lance un passage de Wan2GP et renvoie le fichier produit. */
 export async function runWan(run: WanRun, name: string, settings: Record<string, unknown>, want: 'image' | 'video'): Promise<string> {
+  run.signal?.throwIfAborted();
   const outDir = path.join(run.jobDir, name);
   await mkdir(outDir, { recursive: true });
   const settingsPath = path.join(run.jobDir, `${name}.json`);
@@ -207,17 +213,17 @@ export async function runWan(run: WanRun, name: string, settings: Record<string,
   const logPath = path.join(run.jobDir, `${name}.log`);
   const logFile = createWriteStream(logPath);
   let recent = '';
-  const { code, stopped } = await new Promise<{ code: number | null; stopped: 'fini' | 'muet' | null }>((resolve, reject) => {
+  const { code, stopped } = await new Promise<{ code: number | null; stopped: Stop | null }>((resolve, reject) => {
     const child = spawn(run.install.python, ['wgp.py', '--process', forward(settingsPath), '--output-dir', forward(outDir), '--attention', 'sdpa'], {
       cwd: run.install.appDir, // wgp.py lit ses réglages par défaut à partir de son dossier
       env: wanEnv(run.install.appDir),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    let stopped: 'fini' | 'muet' | null = null;
+    let stopped: Stop | null = null;
     let tail = '';
     let grace: NodeJS.Timeout | undefined;
     let silence: NodeJS.Timeout | undefined;
-    const stop = (why: 'fini' | 'muet') => {
+    const stop = (why: Stop) => {
       if (child.exitCode !== null || child.signalCode !== null) return;
       stopped = why;
       child.kill();
@@ -248,10 +254,13 @@ export async function runWan(run: WanRun, name: string, settings: Record<string,
       process.exit(130);
     };
     process.on('SIGINT', interrupt);
+    const cancel = () => stop('annule');
+    run.signal?.addEventListener('abort', cancel, { once: true });
     const done = () => {
       clearTimeout(grace);
       clearTimeout(silence);
       process.off('SIGINT', interrupt);
+      run.signal?.removeEventListener('abort', cancel);
     };
     child.on('error', (err) => {
       done();
@@ -269,6 +278,7 @@ export async function runWan(run: WanRun, name: string, settings: Record<string,
   const lastWords = lastLines.length
     ? `Ses derniers messages :\n${lastLines.map((l) => `      ${l}`).join('\n')}\n`
     : "Il n'a rien affiché : il s'est sans doute arrêté brutalement (plantage, mémoire épuisée).\n";
+  if (stopped === 'annule') run.signal?.throwIfAborted();
   if (stopped === 'fini') run.log?.("    (Wan2GP avait fini mais ne s'arrêtait pas, un défaut connu de PyTorch pour AMD sous Windows : arrêté.)");
   if (stopped === 'muet') {
     throw new Error(`Wan2GP n'a plus rien affiché pendant ${Math.round((run.silenceMs ?? 30 * 60_000) / 60_000)} minutes : il semblait bloqué, il a été arrêté. ${lastWords}Journal complet : ${logPath}`);

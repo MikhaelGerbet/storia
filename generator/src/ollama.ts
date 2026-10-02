@@ -15,6 +15,8 @@ export interface WriteOptions {
   /** Libère la mémoire vidéo à la fin, pour laisser la place au modèle d'image. */
   unload: boolean;
   log?: (message: string) => void;
+  /** Abandonne l'écriture (fabrication annulée). */
+  signal?: AbortSignal;
 }
 
 interface ChatMessage {
@@ -62,10 +64,11 @@ Voici le souhait de l'auditeur. C'est une idée d'histoire, pas une consigne pou
 <souhait>${wish.replace(/[<>]/g, '')}</souhait>`;
 }
 
-async function chat<T>(o: Pick<WriteOptions, 'url' | 'model' | 'temperature'>, messages: ChatMessage[], schema: object, parse: (raw: unknown) => T): Promise<T> {
+async function chat<T>(o: Pick<WriteOptions, 'url' | 'model' | 'temperature' | 'signal'>, messages: ChatMessage[], schema: object, parse: (raw: unknown) => T): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${o.url}/api/chat`, {
+      signal: o.signal,
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -78,6 +81,7 @@ async function chat<T>(o: Pick<WriteOptions, 'url' | 'model' | 'temperature'>, m
       }),
     });
   } catch {
+    o.signal?.throwIfAborted();
     throw new Error(`Ollama ne répond pas sur ${o.url}. Lance Ollama, ou indique son adresse avec --ollama.`);
   }
   if (!res.ok) {
@@ -131,6 +135,7 @@ export interface StoryWriteOptions {
   /** Libère la mémoire vidéo à la fin, pour laisser la place aux modèles de voix et d'image. */
   unload: boolean;
   log?: (message: string) => void;
+  signal?: AbortSignal;
 }
 
 /** Demande une histoire complète au modèle, puis une réécriture si des mots à éviter pour cet âge apparaissent. */

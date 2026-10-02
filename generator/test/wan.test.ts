@@ -169,3 +169,34 @@ test('les modèles de Wan2GP peuvent aller sur un autre disque, sans perdre ceux
   await writeFile(path.join(elsewhere, 'wan2.2_image2video_14B_low_quanto_mbf16_int8.safetensors'), '');
   assert.deepEqual((await findWan(wan.appDir)).models, ['Wan 2.2 image vers vidéo']);
 });
+
+test('une fabrication annulée arrête Wan2GP aussitôt', { skip: !unix }, async (t) => {
+  const wan = await fakeWan(t);
+  const jobDir = await mkdtemp(path.join(os.tmpdir(), 'storia-wan-'));
+  t.after(() => rm(jobDir, { recursive: true, force: true }));
+  process.env.FAUX_WAN_MUET = '1';
+  t.after(() => {
+    delete process.env.FAUX_WAN_MUET;
+  });
+  const install = await findWan(wan.appDir);
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 300);
+  const begun = Date.now();
+  await assert.rejects(runWan({ install, jobDir, signal: controller.signal }, 'image', { model_type: 'z_image' }, 'image'), { name: 'AbortError' });
+  assert.ok(Date.now() - begun < 5000);
+});
+
+test('sans animation, Wan2GP ne fabrique que l’image', { skip: !unix }, async (t) => {
+  const wan = await fakeWan(t);
+  const out = await mkdtemp(path.join(os.tmpdir(), 'storia-'));
+  t.after(() => rm(out, { recursive: true, force: true }));
+  const result = await runPipeline({
+    age: '6-8', sceneFile, model: 'x', voice: 'x', workflowPath: path.join(out, 'absent.json'),
+    withVoice: false, withImage: true, outDir: out, playerPath, ollamaUrl: 'http://127.0.0.1:9', ttsUrls: [],
+    comfyUrl: 'http://127.0.0.1:9', waterline: 0.62, log: () => {},
+    wan: { dir: wan.appDir, imageModel: 'z_image', steps: 4, animate: false },
+  });
+  assert.deepEqual((await wan.calls()).map((c) => c.settings.model_type), ['z_image']);
+  assert.equal(result.meta.image, 'image.jpg');
+  assert.equal(result.meta.animation, undefined);
+});

@@ -16,6 +16,8 @@ export interface TtsOptions {
   voiceSample?: { bytes: Uint8Array; name: string };
   /** Délai maximal pour une phrase, en millisecondes (30 minutes par défaut). */
   timeoutMs?: number;
+  /** Annule la lecture en cours : le serveur de voix s'arrête à la fin de sa phrase. */
+  signal?: AbortSignal;
 }
 
 interface FormField {
@@ -45,7 +47,18 @@ export function encodeMultipart(fields: FormField[], boundary: string): Buffer {
   return Buffer.concat(parts);
 }
 
-function post(url: URL, body: Buffer, contentType: string, timeoutMs: number): Promise<{ status: number; body: Buffer }> {
+/** Coupe la requête si la fabrication est annulée. */
+function cancelOnAbort(req: http.ClientRequest, signal: AbortSignal | undefined): void {
+  if (!signal) return;
+  const abort = () => {
+    req.destroy(Object.assign(new Error('annulé'), { code: 'STORIA_ABORT' }));
+  };
+  if (signal.aborted) return abort();
+  signal.addEventListener('abort', abort, { once: true });
+  req.on('close', () => signal.removeEventListener('abort', abort));
+}
+
+function post(url: URL, body: Buffer, contentType: string, timeoutMs: number, signal?: AbortSignal): Promise<{ status: number; body: Buffer }> {
   const client = url.protocol === 'https:' ? https : http;
   return new Promise((resolve, reject) => {
     const req = client.request(url, { method: 'POST', headers: { 'content-type': contentType, 'content-length': body.length } }, (res) => {
@@ -56,6 +69,7 @@ function post(url: URL, body: Buffer, contentType: string, timeoutMs: number): P
     });
     req.setTimeout(timeoutMs, () => req.destroy(Object.assign(new Error('délai dépassé'), { code: 'STORIA_TIMEOUT' })));
     req.on('error', reject);
+    cancelOnAbort(req, signal);
     req.end(body);
   });
 }
@@ -68,8 +82,9 @@ export async function synthesize(text: string, o: TtsOptions): Promise<Uint8Arra
   const timeoutMs = o.timeoutMs ?? 30 * 60_000;
   let res: { status: number; body: Buffer };
   try {
-    res = await post(new URL(`${splitVoiceUrl(o.url).base}/tts`), encodeMultipart(fields, boundary), `multipart/form-data; boundary=${boundary}`, timeoutMs);
+    res = await post(new URL(`${splitVoiceUrl(o.url).base}/tts`), encodeMultipart(fields, boundary), `multipart/form-data; boundary=${boundary}`, timeoutMs, o.signal);
   } catch (err) {
+    o.signal?.throwIfAborted();
     if ((err as { code?: string }).code === 'STORIA_TIMEOUT') {
       throw new Error(`Le serveur de voix n'a pas répondu en ${Math.round(timeoutMs / 60_000)} minutes pour une seule phrase. Regarde sa fenêtre : s'il tourne sur le processeur, installe PyTorch pour ta carte graphique (voir voix/README.md).`);
     }
@@ -113,7 +128,7 @@ export interface Narration {
 export class NarrationUnsupported extends Error {}
 
 /** Envoie une requête et transmet la réponse ligne par ligne, au fil de l'eau. */
-function postLines(url: URL, body: Buffer, timeoutMs: number, onLine: (line: string) => void): Promise<{ status: number; text: string }> {
+function postLines(url: URL, body: Buffer, timeoutMs: number, onLine: (line: string) => void, signal?: AbortSignal): Promise<{ status: number; text: string }> {
   const client = url.protocol === 'https:' ? https : http;
   return new Promise((resolve, reject) => {
     const req = client.request(url, { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': body.length } }, (res) => {
@@ -143,6 +158,7 @@ function postLines(url: URL, body: Buffer, timeoutMs: number, onLine: (line: str
     // Délai d'inactivité : il repart à chaque phrase reçue, quelle que soit la longueur de la scène.
     req.setTimeout(timeoutMs, () => req.destroy(Object.assign(new Error('délai dépassé'), { code: 'STORIA_TIMEOUT' })));
     req.on('error', reject);
+    cancelOnAbort(req, signal);
     req.end(body);
   });
 }
@@ -173,8 +189,9 @@ export async function narrate(segments: NarrationSegment[], o: TtsOptions & { on
         if (progress.type === 'phrase') report.push(progress);
         o.onEvent?.(progress);
       }
-    });
+    }, o.signal);
   } catch (err) {
+    o.signal?.throwIfAborted();
     if ((err as { code?: string }).code === 'STORIA_TIMEOUT') {
       throw new Error(`Le serveur de voix n'a pas avancé en ${Math.round(timeoutMs / 60_000)} minutes. Regarde sa fenêtre : s'il tourne sur le processeur, installe PyTorch pour ta carte graphique (voir voix/README.md).`);
     }

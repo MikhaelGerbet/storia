@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test } from 'node:test';
-import { encodeMultipart, synthesize } from '../src/tts.ts';
+import { encodeMultipart, narrate, synthesize } from '../src/tts.ts';
 import { wavInfo } from '../src/wav.ts';
 import { streamingWav } from './mock-services.ts';
 
@@ -61,4 +61,25 @@ test('serveur de voix absent : message clair', async () => {
 test('encodeMultipart produit un corps valide', () => {
   const body = encodeMultipart([{ name: 'text', value: 'a' }], 'B').toString();
   assert.equal(body, '--B\r\nContent-Disposition: form-data; name="text"\r\n\r\na\r\n--B--\r\n');
+});
+
+test('une lecture annulée coupe la connexion avec le serveur de voix', async (t) => {
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/x-ndjson' });
+    res.write(`${JSON.stringify({ type: 'debut', phrases: 3 })}\n`); // puis plus rien : une phrase très longue
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+  const { port } = server.address() as AddressInfo;
+  const controller = new AbortController();
+  const events: string[] = [];
+  setTimeout(() => controller.abort(), 200);
+  await assert.rejects(
+    narrate([{ text: 'Il était une fois.', pause: 0.5 }], { url: `http://127.0.0.1:${port}`, signal: controller.signal, onEvent: (e) => events.push(e.type) }),
+    { name: 'AbortError' },
+  );
+  assert.deepEqual(events, ['debut']);
 });

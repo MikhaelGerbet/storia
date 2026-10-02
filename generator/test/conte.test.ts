@@ -9,29 +9,9 @@ import { arrangeStoryEffects, parseStory, storyKeywords, storySystemPrompt, toSt
 import { runPipeline } from '../src/pipeline.ts';
 import type { PipelineProgress } from '../src/pipeline.ts';
 import { AGE_BANDS } from '../src/scene.ts';
-import { startMockServices } from './mock-services.ts';
+import { SAMPLE_STORY, startMockServices } from './mock-services.ts';
 
 const playerPath = path.resolve(import.meta.dirname, '..', '..', 'prototype', 'intro-pirate', 'index.html');
-
-export const SAMPLE_STORY = {
-  titre: 'La Boussole qui chantait',
-  accroche: 'Une petite renarde suit une boussole qui fredonne vers une île oubliée.',
-  ambiance: 'mer',
-  segments: [
-    { texte: 'Il était une fois une petite renarde curieuse…', effet: 'aucun' },
-    { texte: 'qui trouva, au fond d’un coffre, une boussole qui chantait.', effet: 'magie' },
-    { texte: 'La boussole fredonnait toujours la même chanson :', effet: 'aucun' },
-    { texte: '« Vers l’île aux trésors, petite renarde ! »', effet: 'vague' },
-    { texte: 'Avec son ami le perroquet, elle prit la mer.', effet: 'vent' },
-    { texte: 'Soudain, une tempête se leva…', effet: 'vent' },
-    { texte: 'La renarde chanta avec la boussole, et le ciel se calma.', effet: 'lumiere' },
-    { texte: 'Sur l’île, un trésor brillait : des étoiles de mer qui riaient.', effet: 'revelation' },
-    { texte: 'Le soir venu, la renarde s’endormit en souriant.', effet: 'cloche' },
-  ],
-  mots_cles: ['Renarde', 'boussole', 'île', 'tempête'],
-  decor_en: 'A little fox on a small sailboat at sunset near a tropical island',
-  mouvement_en: 'The sea gently sways, the sail breathes in the wind, sparkles drift in the air',
-};
 
 const composition: Composition = { theme: 'pirates', heros: 'renarde', lieu: 'ile', compagnon: 'perroquet', objet: 'boussole', rebondissement: 'tempete', age: '6-8', duree: 'courte' };
 

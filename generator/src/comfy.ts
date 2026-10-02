@@ -48,15 +48,18 @@ export async function generateImage(o: {
   workflow: Workflow;
   timeoutMs?: number;
   pollMs?: number;
+  signal?: AbortSignal;
 }): Promise<{ bytes: Uint8Array; mime: string }> {
   let res: Response;
   try {
     res = await fetch(`${o.url}/prompt`, {
+      signal: o.signal,
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ prompt: o.workflow, client_id: crypto.randomUUID() }),
     });
   } catch {
+    o.signal?.throwIfAborted();
     throw new Error(`ComfyUI ne répond pas sur ${o.url}. Lance ComfyUI, ou indique son adresse avec --comfy.`);
   }
   const queued = (await res.json().catch(() => ({}))) as { prompt_id?: string; error?: unknown; node_errors?: unknown };
@@ -67,7 +70,8 @@ export async function generateImage(o: {
   const deadline = Date.now() + (o.timeoutMs ?? 300_000);
   while (Date.now() < deadline) {
     await sleep(o.pollMs ?? 1000);
-    const history = (await (await fetch(`${o.url}/history/${id}`)).json()) as Record<string, HistoryEntry>;
+    o.signal?.throwIfAborted();
+    const history = (await (await fetch(`${o.url}/history/${id}`, { signal: o.signal })).json()) as Record<string, HistoryEntry>;
     const entry = history[id];
     if (!entry) continue; // encore en file d'attente ou en cours
     if (entry.status?.status_str === 'error') {

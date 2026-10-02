@@ -26,6 +26,8 @@ export interface WanOptions {
   echo?: boolean;
   /** Dossier où Wan2GP doit télécharger ses modèles (un autre disque, par exemple). */
   modelsDir?: string;
+  /** false : seulement l'image fixe, sans l'animation en boucle (bien plus rapide). */
+  animate?: boolean;
 }
 
 export type PipelineStep = 'texte' | 'voix' | 'image' | 'animation' | 'assemblage';
@@ -68,6 +70,8 @@ export interface PipelineOptions {
   waterline: number;
   seed?: number;
   log: (message: string) => void;
+  /** Annule la fabrication : chaque étape s'arrête dès que possible, Wan2GP compris. */
+  signal?: AbortSignal;
 }
 
 export interface StoryMeta {
@@ -208,6 +212,8 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
   const voiceSample = o.voiceSamplePath ? { bytes: await readFile(o.voiceSamplePath), name: path.basename(o.voiceSamplePath) } : undefined;
 
   const progress = (etape: PipelineStep, avancement: number, detail?: string) => o.onProgress?.({ etape, avancement, detail });
+  const { signal } = o;
+  signal?.throwIfAborted();
   let scene: PlayerScene;
   let teaser = '';
   let prompt: string;
@@ -222,7 +228,7 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     const c = o.composition;
     o.log(`1/3 Écriture de l'histoire avec ${o.model}…`);
     // Le modèle de texte est déchargé ensuite : la voix et Wan ont besoin de la carte graphique.
-    const written = await writeStory({ url: o.ollamaUrl, model: o.model, composition: c, unload: true, log: o.log });
+    const written = await writeStory({ url: o.ollamaUrl, model: o.model, composition: c, unload: true, log: o.log, signal });
     const arranged = arrangeStoryEffects(written.segments);
     const story = { ...written, segments: arranged.segments };
     scene = toStoryScene(story, c);
@@ -235,7 +241,7 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     arranged.notes.forEach((note) => o.log(`    · ${note}`));
   } else {
     o.log(`1/3 Écriture du texte avec ${o.model}…`);
-    const written = await writeDraft({ url: o.ollamaUrl, model: o.model, age: o.age, idea: o.idea, unload: o.withImage, log: o.log });
+    const written = await writeDraft({ url: o.ollamaUrl, model: o.model, age: o.age, idea: o.idea, unload: o.withImage, log: o.log, signal });
     const arranged = arrangeEffects(written.segments);
     const draft = { ...written, segments: arranged.segments };
     scene = toPlayerScene(draft, o.age);
@@ -247,12 +253,14 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
   }
 
   progress('texte', 1, scene.title);
+  signal?.throwIfAborted();
   const ttsUrls = o.withVoice ? o.ttsUrls : [];
   const comparing = ttsUrls.length > 1;
   const folder = o.folder ?? path.join(o.outDir, `${timestamp()}-${slugify(scene.title)}${comparing ? '-comparaison' : ''}`);
   await mkdir(folder, { recursive: true });
   const media = [comparing ? `${ttsUrls.length} voix` : ttsUrls.length ? 'voix' : '', o.withImage && !wan ? 'image' : ''].filter(Boolean).join(' et ');
-  const wanStep = wan ? `${givenImage ? 'animation' : 'image et animation'} avec Wan 2.2` : '';
+  const animate = o.wan?.animate !== false;
+  const wanStep = wan ? `${[givenImage ? '' : 'image', animate ? 'animation' : ''].filter(Boolean).join(' et ')} avec ${animate ? 'Wan 2.2' : 'Wan2GP'}` : '';
   const step = [media, wanStep].filter(Boolean).join(', puis ') || 'rien à générer';
   o.log(`2/3 ${step[0].toUpperCase()}${step.slice(1)}…`);
   const voicesTask = (async () => {
@@ -269,6 +277,7 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
             url,
             voice: o.voice,
             voiceSample,
+            signal,
             onEvent: (event) => {
               describeEvent(event).forEach((line) => o.log(tag + line));
               if (event.type === 'phrase' && event.total) progress('voix', (event.numero ?? 0) / event.total, `phrase ${event.numero} sur ${event.total}`);
@@ -284,7 +293,7 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
         const voices: Uint8Array[] = [];
         for (const [i, segment] of scene.segments.entries()) {
           const begun = performance.now();
-          const voice = await synthesize(segment.text, { url, voice: o.voice, voiceSample });
+          const voice = await synthesize(segment.text, { url, voice: o.voice, voiceSample, signal });
           voices.push(voice);
           o.log(`${tag}phrase ${i + 1}/${n} lue en ${duration((performance.now() - begun) / 1000)} (${wavInfo(voice).duration.toFixed(1)} s de parole)`);
           progress('voix', (i + 1) / n, `phrase ${i + 1} sur ${n}`);
@@ -303,18 +312,19 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     if (!workflowRaw) return null;
     progress('image', 0);
     const seed = o.seed ?? Math.floor(Math.random() * 2 ** 32);
-    const image = await generateImage({ url: o.comfyUrl, workflow: prepareWorkflow(workflowRaw, prompt, seed) });
+    const image = await generateImage({ url: o.comfyUrl, workflow: prepareWorkflow(workflowRaw, prompt, seed), signal });
     o.log(`    image : graine ${seed} (${elapsed()})`);
     progress('image', 1);
     return image;
   })();
   const [voiceSets, made] = await Promise.all([voicesTask, imageTask]);
   let image = made;
+  signal?.throwIfAborted();
 
   if (wan && o.wan) {
     // La carte graphique passe à Wan : le serveur de voix libère d'abord la sienne (il la reprendra au besoin).
     await Promise.all(ttsUrls.map((url) => releaseVoice(url)));
-    const run = { install: wan, jobDir: path.join(folder, 'wan'), echo: o.wan.echo, log: o.log };
+    const run = { install: wan, jobDir: path.join(folder, 'wan'), echo: o.wan.echo, log: o.log, signal };
     const seed = o.seed ?? Math.floor(Math.random() * 2 ** 31);
     let still = o.imagePath;
     if (!still) {
@@ -325,21 +335,24 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
       o.log(`    image : prête (${elapsed()})`);
       progress('image', 1);
     }
-    o.log(`    animation : Wan 2.2, ${o.wan.steps} étapes, boucle de 5 secondes. Compte plusieurs minutes…`);
-    progress('animation', 0);
-    video = await readMedia(
-      await runWan({ ...run, onSteps: (f) => progress('animation', f) }, 'animation', loopSettings({ prompt: motion, image: still, seed, steps: o.wan.steps }), 'video'),
-      'video',
-    );
-    o.log(`    animation : prête (${elapsed()})`);
-    progress('animation', 1);
+    if (animate) {
+      o.log(`    animation : Wan 2.2, ${o.wan.steps} étapes, boucle de 5 secondes. Compte plusieurs minutes…`);
+      progress('animation', 0);
+      video = await readMedia(
+        await runWan({ ...run, onSteps: (f) => progress('animation', f) }, 'animation', loopSettings({ prompt: motion, image: still, seed, steps: o.wan.steps }), 'video'),
+        'video',
+      );
+      o.log(`    animation : prête (${elapsed()})`);
+      progress('animation', 1);
+    }
   }
+  signal?.throwIfAborted();
 
   o.log('3/3 Assemblage…');
   progress('assemblage', 0);
   await writeFile(path.join(folder, 'scene.json'), `${JSON.stringify(scene, null, 2)}\n`);
   await writeFile(path.join(folder, 'prompt-image.txt'), `${prompt}\n`);
-  if (wan) await writeFile(path.join(folder, 'prompt-animation.txt'), `${motion}\n`);
+  if (wan && animate) await writeFile(path.join(folder, 'prompt-animation.txt'), `${motion}\n`);
   const imageFile = image ? `image.${IMAGE_EXT[image.mime] ?? 'png'}` : undefined;
   if (image && imageFile) await writeFile(path.join(folder, imageFile), image.bytes);
   const imageUri = image ? toDataUri(image.bytes, image.mime) : undefined;
@@ -363,7 +376,7 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     createdAt: new Date().toISOString(),
   });
   const imageCredit = wan
-    ? `${givenImage ? givenImage.name : o.wan?.imageModel}, animée par Wan 2.2`
+    ? `${givenImage ? givenImage.name : o.wan?.imageModel}${animate ? ', animée par Wan 2.2' : ''}`
     : video
       ? `animation ${video.name}`
       : givenImage

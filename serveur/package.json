@@ -1,0 +1,23 @@
+{
+  "name": "storia-serveur",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Le studio Storia : API, file de création (BullMQ sur Redis), bibliothèque d'histoires (SQLite) et application.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/principal.ts",
+    "importer": "node --disable-warning=ExperimentalWarning src/importer.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.ts\"",
+    "verifier": "tsc -p ."
+  },
+  "dependencies": {
+    "bullmq": "^5.58.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.0"
+  }
+}
