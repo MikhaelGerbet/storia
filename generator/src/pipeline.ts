@@ -8,7 +8,7 @@ import type { StoryPackage } from './package.ts';
 import { AGE_PROFILES, arrangeEffects, imagePrompt, loopPrompt, toPlayerScene } from './scene.ts';
 import type { AgeBand, PlayerScene } from './scene.ts';
 import { NarrationUnsupported, narrate, releaseVoice, synthesize } from './tts.ts';
-import { findWan, loopSettings, runWan, stillSettings } from './wan.ts';
+import { findWan, loopSettings, runWan, stillSettings, useModelsFolder } from './wan.ts';
 import type { NarrationEvent } from './tts.ts';
 import { wavInfo } from './wav.ts';
 
@@ -21,6 +21,8 @@ export interface WanOptions {
   steps: number;
   /** Affiche la progression de Wan2GP dans le terminal. */
   echo?: boolean;
+  /** Dossier où Wan2GP doit télécharger ses modèles (un autre disque, par exemple). */
+  modelsDir?: string;
 }
 
 export interface PipelineOptions {
@@ -162,6 +164,9 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
   if (video && video.bytes.length > 60_000_000) o.log(`Attention : l'animation pèse ${Math.round(video.bytes.length / 1e6)} Mo, la page sera lourde à ouvrir.`);
   const wan = o.wan ? await findWan(o.wan.dir) : undefined;
   if (wan) o.log(`Wan2GP ${wan.version} : ${wan.appDir}${wan.models.length ? ` (déjà téléchargés : ${wan.models.join(', ')})` : ''}`);
+  if (wan && o.wan?.modelsDir && (await useModelsFolder(wan, o.wan.modelsDir))) {
+    o.log(`Wan2GP téléchargera désormais ses modèles dans ${o.wan.modelsDir} (ceux déjà téléchargés restent où ils sont).`);
+  }
   const workflowRaw = o.withImage && !givenImage && !wan
     ? await readJsonFile(o.workflowPath, `Workflow d'image introuvable : ${o.workflowPath}. Exporte-le depuis ComfyUI (voir le README du générateur), ou lance avec --sans-image.`)
     : null;

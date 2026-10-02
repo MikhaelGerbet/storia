@@ -30,6 +30,8 @@ Options :
                          Pinokio), sans passer par son interface. Avec --image, anime ton image
   --wan-dossier <dir>    dossier de Wan2GP, celui qui contient wgp.py (défaut : cherché dans Pinokio)
   --wan-etapes <n>       étapes de l'animation : 4 (défaut, accélérateurs Lightning) ou 30 (plus lent)
+  --wan-modeles <dir>    dossier où Wan2GP télécharge ses modèles, par exemple sur un autre disque
+                         (P:/wan-modeles). Réglage gardé par Wan2GP : une fois suffit
   --wan-image <modele>   modèle de l'image dans Wan2GP (défaut : z_image ; aussi flux2_klein_4b,
                          qwen_image_20B…)
   --sans-voix            garde la voix du navigateur
@@ -59,6 +61,7 @@ async function main(): Promise<void> {
       'wan-dossier': { type: 'string' },
       'wan-etapes': { type: 'string', default: '4' },
       'wan-image': { type: 'string', default: 'z_image' },
+      'wan-modeles': { type: 'string' },
       'sans-voix': { type: 'boolean', default: false },
       'sans-image': { type: 'boolean', default: false },
       'ligne-eau': { type: 'string', default: '0.62' },
@@ -97,7 +100,13 @@ async function main(): Promise<void> {
     imagePath: values.image === undefined ? undefined : path.resolve(values.image),
     videoPath: values.animation === undefined ? undefined : path.resolve(values.animation),
     wan: values.wan
-      ? { dir: values['wan-dossier'] && path.resolve(values['wan-dossier']), imageModel: values['wan-image'], steps: wanSteps, echo: true }
+      ? {
+          dir: values['wan-dossier'] && path.resolve(values['wan-dossier']),
+          imageModel: values['wan-image'],
+          steps: wanSteps,
+          echo: true,
+          modelsDir: values['wan-modeles'] && path.resolve(values['wan-modeles']),
+        }
       : undefined,
     withVoice: !values['sans-voix'],
     withImage: !values['sans-image'],

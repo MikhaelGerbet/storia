@@ -4,7 +4,7 @@
 // partant d'elle et en revenant à elle (même image au début et à la fin), la vidéo tourne donc en boucle.
 import { spawn } from 'node:child_process';
 import { createWriteStream, existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -44,13 +44,29 @@ function pythonOf(appDir: string): string | undefined {
   return undefined;
 }
 
+/** Les réglages de Wan2GP (wgp_config.json, à côté de wgp.py), ou undefined s'il n'a jamais été lancé. */
+async function readWanConfig(appDir: string): Promise<Record<string, unknown> | undefined> {
+  try {
+    return JSON.parse(await readFile(path.join(appDir, 'wgp_config.json'), 'utf8')) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Dossiers où Wan2GP range et cherche ses modèles (« Model Checkpoint Folders ») ; le premier reçoit les téléchargements. */
+function checkpointRoots(appDir: string, config: Record<string, unknown> | undefined): string[] {
+  const listed = Array.isArray(config?.checkpoints_paths) ? (config.checkpoints_paths as unknown[]).map(String).filter(Boolean) : [];
+  return (listed.length ? listed : ['ckpts', '.']).map((p) => path.resolve(appDir, p));
+}
+
 async function describeInstall(dir: string): Promise<WanInstall | undefined> {
   const appDir = existsSync(path.join(dir, 'wgp.py')) ? dir : existsSync(path.join(dir, 'app', 'wgp.py')) ? path.join(dir, 'app') : undefined;
   if (!appDir) return undefined;
   const python = pythonOf(appDir);
   if (!python) return undefined;
   const version = /WanGP_version\s*=\s*["']([\d.]+)["']/.exec(await readFile(path.join(appDir, 'wgp.py'), 'utf8'))?.[1] ?? '0';
-  const files = await readdir(path.join(appDir, 'ckpts')).catch(() => [] as string[]);
+  const files: string[] = [];
+  for (const root of checkpointRoots(appDir, await readWanConfig(appDir))) files.push(...(await readdir(root).catch(() => [] as string[])));
   const models = MODEL_FILES.filter(([, pattern]) => files.some((f) => pattern.test(f))).map(([name]) => name);
   return { appDir, python, version, models };
 }
@@ -91,6 +107,27 @@ export async function findWan(explicit?: string, homes: string[] = defaultPinoki
 
 function defaultPinokioHomes(): string[] {
   return [process.env.PINOKIO_HOME, 'C:/pinokio', 'D:/pinokio', path.join(os.homedir(), 'pinokio')].filter((x): x is string => !!x);
+}
+
+/**
+ * Fait télécharger les modèles de Wan2GP dans `dir` (un autre disque, par exemple) : ce dossier devient le premier de
+ * ses « Model Checkpoint Folders ». Les modèles déjà téléchargés restent trouvés là où ils sont. Renvoie false si
+ * c'était déjà le cas. L'interface de Wan dans Pinokio prendra le réglage à son prochain démarrage.
+ */
+export async function useModelsFolder(install: WanInstall, dir: string): Promise<boolean> {
+  const configPath = path.join(install.appDir, 'wgp_config.json');
+  const config = await readWanConfig(install.appDir);
+  if (!config) throw new Error(`Réglages de Wan2GP introuvables (${configPath}) : lance Wan une fois dans Pinokio, puis réessaie.`);
+  const target = forward(path.resolve(dir));
+  const same = (p: string) => forward(path.resolve(install.appDir, p)).toLowerCase() === target.toLowerCase();
+  const current = Array.isArray(config.checkpoints_paths) && config.checkpoints_paths.length ? (config.checkpoints_paths as unknown[]).map(String) : ['ckpts', '.'];
+  await mkdir(dir, { recursive: true });
+  if (same(current[0])) return false;
+  config.checkpoints_paths = [target, ...current.filter((p) => !same(p))];
+  const temporary = `${configPath}.storia`;
+  await writeFile(temporary, JSON.stringify(config, null, 4));
+  await rename(temporary, configPath); // jamais de fichier de réglages à moitié écrit
+  return true;
 }
 
 /** Réglages de l'image fixe : format paysage, comme la vidéo qui en partira. */

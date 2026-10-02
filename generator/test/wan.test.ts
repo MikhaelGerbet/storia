@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { runPipeline } from '../src/pipeline.ts';
-import { findWan, loopSettings, runWan } from '../src/wan.ts';
+import { findWan, loopSettings, runWan, useModelsFolder } from '../src/wan.ts';
 
 const playerPath = path.resolve(import.meta.dirname, '..', '..', 'prototype', 'intro-pirate', 'index.html');
 const sceneFile = path.resolve(import.meta.dirname, '..', 'scenes', 'navire-endormi.json');
@@ -152,4 +152,20 @@ test('Wan2GP muet trop longtemps est arrêté avec un message clair', { skip: !u
   });
   const install = await findWan(wan.appDir);
   await assert.rejects(runWan({ install, jobDir, silenceMs: 300 }, 'image', { model_type: 'z_image' }, 'image'), /semblait bloqué/);
+});
+
+test('les modèles de Wan2GP peuvent aller sur un autre disque, sans perdre ceux déjà téléchargés', { skip: !unix }, async (t) => {
+  const wan = await fakeWan(t);
+  const configPath = path.join(wan.appDir, 'wgp_config.json');
+  await assert.rejects(useModelsFolder(await findWan(wan.appDir), path.join(wan.home, 'modeles')), /lance Wan une fois/);
+  await writeFile(configPath, JSON.stringify({ checkpoints_paths: ['ckpts', '.'], UI_theme: 'default' }, null, 4));
+  const elsewhere = path.join(wan.home, 'autre-disque', 'wan-modeles');
+  assert.equal(await useModelsFolder(await findWan(wan.appDir), elsewhere), true);
+  const config = JSON.parse(await readFile(configPath, 'utf8'));
+  assert.deepEqual(config.checkpoints_paths, [elsewhere.replace(/\\/g, '/'), 'ckpts', '.']);
+  assert.equal(config.UI_theme, 'default'); // le reste des réglages est gardé
+  assert.equal(await useModelsFolder(await findWan(wan.appDir), elsewhere), false); // déjà fait
+  // Un modèle téléchargé dans le nouveau dossier compte pour le choix de l'installation
+  await writeFile(path.join(elsewhere, 'wan2.2_image2video_14B_low_quanto_mbf16_int8.safetensors'), '');
+  assert.deepEqual((await findWan(wan.appDir)).models, ['Wan 2.2 image vers vidéo']);
 });
