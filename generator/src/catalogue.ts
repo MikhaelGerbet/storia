@@ -1,0 +1,202 @@
+// Le catalogue des ingrédients d'histoire : thèmes, héros, lieux, compagnons, objets magiques et rebondissements.
+// Partagé par le générateur, le serveur et l'application (qui le reçoit par l'API).
+// « emoji » nomme une image des Fluent Emoji 3D de Microsoft (licence MIT), embarquée dans l'application.
+import type { AgeBand } from './scene.ts';
+
+export const AMBIANCES = ['grotte', 'mer', 'foret', 'espace', 'chateau', 'nuit'] as const;
+export type Ambiance = (typeof AMBIANCES)[number];
+
+export interface Theme {
+  id: string;
+  label: string;
+  accroche: string;
+  emoji: string;
+  /** Dégradé de la carte, du plus clair au plus sombre. */
+  couleurs: [string, string];
+  ambiance: Ambiance;
+  /** Décor de secours pour l'illustration, en anglais. */
+  decor_en: string;
+}
+
+export interface Ingredient {
+  id: string;
+  label: string;
+  /** Ce que lit le conteur : « une petite renarde curieuse ». */
+  texte: string;
+  emoji: string;
+  /** Thèmes où l'ingrédient s'invite volontiers ; absent : il va partout. */
+  themes?: string[];
+}
+
+export const KINDS = ['heros', 'lieu', 'compagnon', 'objet', 'rebondissement'] as const;
+export type Kind = (typeof KINDS)[number];
+
+export const DUREES = ['courte', 'moyenne', 'longue'] as const;
+export type Duree = (typeof DUREES)[number];
+
+export interface DureeProfile {
+  label: string;
+  minutes: string;
+  minSegments: number;
+  maxSegments: number;
+}
+
+export const DUREE_PROFILES: Record<Duree, DureeProfile> = {
+  courte: { label: 'courte', minutes: 'environ une minute', minSegments: 8, maxSegments: 12 },
+  moyenne: { label: 'moyenne', minutes: 'deux à trois minutes', minSegments: 16, maxSegments: 22 },
+  longue: { label: 'longue', minutes: 'quatre à cinq minutes', minSegments: 26, maxSegments: 34 },
+};
+
+export const THEMES: Theme[] = [
+  { id: 'pirates', label: 'Pirates', accroche: 'Trésors, îles et grands voiliers', emoji: 'Pirate flag', couleurs: ['#16A6A0', '#0B2545'], ambiance: 'mer', decor_en: 'a small pirate ship sailing on a moonlit sea near a tropical island' },
+  { id: 'espace', label: 'Espace', accroche: 'Fusées, planètes et étoiles filantes', emoji: 'Rocket', couleurs: ['#7B5CF0', '#1B1446'], ambiance: 'espace', decor_en: 'a little rocket floating among colorful planets and twinkling stars' },
+  { id: 'chateau', label: 'Château', accroche: 'Chevaliers, princesses et grands bals', emoji: 'Castle', couleurs: ['#E06AA6', '#3B1A4A'], ambiance: 'chateau', decor_en: 'a fairytale castle on a green hill at dusk, with glowing windows' },
+  { id: 'dinosaures', label: 'Dinosaures', accroche: 'Volcans et géants au grand cœur', emoji: 'Sauropod', couleurs: ['#6CBF3F', '#173D1F'], ambiance: 'foret', decor_en: 'a lush prehistoric valley with friendly dinosaurs and a gently smoking volcano' },
+  { id: 'foret', label: 'Forêt enchantée', accroche: 'Champignons géants et lucioles', emoji: 'Mushroom', couleurs: ['#2FB58A', '#0F2E2A'], ambiance: 'foret', decor_en: 'an enchanted forest with giant glowing mushrooms and floating fireflies' },
+  { id: 'ocean', label: 'Sous la mer', accroche: 'Coraux, baleines et cités englouties', emoji: 'Spouting whale', couleurs: ['#21B2E0', '#0A2A4A'], ambiance: 'mer', decor_en: 'a colorful coral reef deep under the sea, with soft rays of light' },
+  { id: 'dragons', label: 'Dragons', accroche: 'Montagnes, grottes et pierres qui brillent', emoji: 'Dragon', couleurs: ['#F0843F', '#3A1410'], ambiance: 'grotte', decor_en: 'a cozy mountain cave with a friendly little dragon and glittering gems' },
+  { id: 'reves', label: 'Doux rêves', accroche: 'Doudous, lune et nuages', emoji: 'Crescent moon', couleurs: ['#9487F0', '#1A1838'], ambiance: 'nuit', decor_en: 'a cozy child bedroom at night, a big friendly moon and soft clouds outside the window' },
+];
+
+export const INGREDIENTS: Record<Kind, Ingredient[]> = {
+  heros: [
+    { id: 'renarde', label: 'Renarde', texte: 'une petite renarde curieuse', emoji: 'Fox' },
+    { id: 'chaton', label: 'Chaton', texte: 'un chaton qui rêve de voler', emoji: 'Cat face' },
+    { id: 'robot', label: 'Robot', texte: 'un petit robot qui apprend à rire', emoji: 'Robot' },
+    { id: 'licorne', label: 'Licorne', texte: 'une licorne qui a perdu ses couleurs', emoji: 'Unicorn', themes: ['chateau', 'reves', 'foret'] },
+    { id: 'ourson', label: 'Ourson', texte: 'un ourson courageux', emoji: 'Bear' },
+    { id: 'tortue', label: 'Tortue', texte: 'une tortue qui voulait aller vite', emoji: 'Turtle' },
+    { id: 'dragonneau', label: 'Petit dragon', texte: 'un petit dragon qui a peur du feu', emoji: 'Dragon', themes: ['dragons', 'chateau'] },
+    { id: 'dino', label: 'Dinosaure', texte: 'un dinosaure gourmand de fraises', emoji: 'Sauropod', themes: ['dinosaures'] },
+    { id: 'pingouin', label: 'Pingouin', texte: 'un pingouin explorateur', emoji: 'Penguin' },
+    { id: 'lapine', label: 'Lapine', texte: 'une lapine inventrice', emoji: 'Rabbit face' },
+    { id: 'herisson', label: 'Hérisson', texte: 'un hérisson qui collectionne les étoiles', emoji: 'Hedgehog' },
+    { id: 'baleine', label: 'Baleine', texte: 'une baleine qui chante faux', emoji: 'Spouting whale', themes: ['ocean', 'pirates'] },
+    { id: 'hibou', label: 'Hibou', texte: 'un hibou qui ne voulait pas dormir', emoji: 'Owl' },
+    { id: 'grenouille', label: 'Grenouille', texte: 'une grenouille apprentie magicienne', emoji: 'Frog' },
+    { id: 'souris', label: 'Souris', texte: 'une souris capitaine de navire', emoji: 'Mouse face', themes: ['pirates', 'ocean'] },
+    { id: 'dauphin', label: 'Dauphin', texte: 'un dauphin farceur', emoji: 'Dolphin', themes: ['ocean', 'pirates'] },
+  ],
+  lieu: [
+    { id: 'ile', label: 'Île au trésor', texte: 'une île aux trésors', emoji: 'Desert island', themes: ['pirates', 'ocean'] },
+    { id: 'planete', label: 'Planète bonbon', texte: 'une planète en bonbons', emoji: 'Ringed planet', themes: ['espace'] },
+    { id: 'nuages', label: 'Royaume des nuages', texte: 'un château posé sur les nuages', emoji: 'Cloud', themes: ['chateau', 'reves'] },
+    { id: 'champignons', label: 'Forêt de champignons', texte: 'une forêt de champignons géants', emoji: 'Mushroom', themes: ['foret'] },
+    { id: 'recif', label: 'Village sous la mer', texte: 'un village caché sous la mer', emoji: 'Tropical fish', themes: ['ocean'] },
+    { id: 'volcan', label: 'Vallée du volcan', texte: 'une vallée au pied d’un volcan endormi', emoji: 'Volcano', themes: ['dinosaures', 'dragons'] },
+    { id: 'montagne', label: 'Montagne enneigée', texte: 'une montagne couverte de neige', emoji: 'Snow-capped mountain', themes: ['dragons', 'reves', 'foret'] },
+    { id: 'bibliotheque', label: 'Bibliothèque magique', texte: 'une bibliothèque où les livres s’envolent', emoji: 'Books' },
+    { id: 'jardin', label: 'Jardin de nuit', texte: 'un jardin qui s’illumine la nuit', emoji: 'Night with stars', themes: ['reves', 'foret'] },
+    { id: 'arcenciel', label: 'Pont arc-en-ciel', texte: 'un pont fait d’arc-en-ciel', emoji: 'Rainbow' },
+    { id: 'voielactee', label: 'Voie lactée', texte: 'le chemin des étoiles de la Voie lactée', emoji: 'Milky way', themes: ['espace', 'reves'] },
+    { id: 'cabane', label: 'Cabane perchée', texte: 'une cabane tout en haut d’un arbre', emoji: 'Hut', themes: ['foret', 'reves'] },
+  ],
+  compagnon: [
+    { id: 'perroquet', label: 'Perroquet', texte: 'un perroquet bavard', emoji: 'Parrot' },
+    { id: 'etoile', label: 'Étoile filante', texte: 'une étoile filante qui parle', emoji: 'Shooting star' },
+    { id: 'papillon', label: 'Papillon', texte: 'un papillon messager', emoji: 'Butterfly' },
+    { id: 'coccinelle', label: 'Coccinelle', texte: 'une coccinelle porte-bonheur', emoji: 'Lady beetle' },
+    { id: 'escargot', label: 'Escargot', texte: 'un escargot très sage', emoji: 'Snail' },
+    { id: 'chien', label: 'Chien', texte: 'un chien fidèle et rigolo', emoji: 'Dog face' },
+    { id: 'oiseau', label: 'Oiseau', texte: 'un petit oiseau siffleur', emoji: 'Bird' },
+    { id: 'luciole', label: 'Luciole', texte: 'une luciole qui éclaire le chemin', emoji: 'Sparkles' },
+    { id: 'hibou', label: 'Hibou', texte: 'un vieux hibou savant', emoji: 'Owl' },
+    { id: 'dauphin', label: 'Dauphin', texte: 'un dauphin rieur', emoji: 'Dolphin', themes: ['ocean', 'pirates'] },
+    { id: 'robot', label: 'Robot', texte: 'un robot de poche', emoji: 'Robot', themes: ['espace'] },
+  ],
+  objet: [
+    { id: 'boussole', label: 'Boussole', texte: 'une boussole qui chante', emoji: 'Compass' },
+    { id: 'cle', label: 'Clé dorée', texte: 'une vieille clé dorée', emoji: 'Old key' },
+    { id: 'lanterne', label: 'Lanterne', texte: 'une lanterne qui éclaire les rêves', emoji: 'Red paper lantern' },
+    { id: 'chapeau', label: 'Chapeau magique', texte: 'un chapeau qui exauce un vœu', emoji: 'Top hat' },
+    { id: 'carte', label: 'Carte au trésor', texte: 'une carte au trésor qui se dessine toute seule', emoji: 'World map' },
+    { id: 'plume', label: 'Plume', texte: 'une plume qui écrit toute seule', emoji: 'Feather' },
+    { id: 'coquillage', label: 'Coquillage', texte: 'un coquillage qui murmure des secrets', emoji: 'Spiral shell', themes: ['ocean', 'pirates'] },
+    { id: 'baguette', label: 'Baguette', texte: 'une baguette magique un peu capricieuse', emoji: 'Magic wand' },
+    { id: 'boule', label: 'Boule de cristal', texte: 'une boule de cristal pleine d’étoiles', emoji: 'Crystal ball' },
+    { id: 'gemme', label: 'Pierre qui brille', texte: 'une pierre qui brille dans le noir', emoji: 'Gem stone' },
+    { id: 'couronne', label: 'Couronne', texte: 'une couronne beaucoup trop grande', emoji: 'Crown', themes: ['chateau'] },
+    { id: 'livre', label: 'Livre ouvert', texte: 'un livre dont les dessins s’animent', emoji: 'Open book' },
+  ],
+  rebondissement: [
+    { id: 'tempete', label: 'Tempête', texte: 'une tempête soudaine', emoji: 'Cloud with lightning and rain' },
+    { id: 'secret', label: 'Secret', texte: 'un secret bien gardé', emoji: 'Shushing face' },
+    { id: 'perdu', label: 'Objet perdu', texte: 'un objet précieux qui disparaît', emoji: 'Magnifying glass tilted left' },
+    { id: 'porte', label: 'Porte cachée', texte: 'une porte invisible', emoji: 'Door' },
+    { id: 'sort', label: 'Sort raté', texte: 'un sort qui tourne de travers', emoji: 'Sparkles' },
+    { id: 'course', label: 'Contre la montre', texte: 'une course contre la montre', emoji: 'Hourglass done' },
+    { id: 'neige', label: 'Neige en été', texte: 'il se met à neiger en plein été', emoji: 'Snowflake' },
+    { id: 'musique', label: 'Musique mystère', texte: 'une musique mystérieuse dans la nuit', emoji: 'Musical notes' },
+    { id: 'bulles', label: 'Bulles', texte: 'tout le monde se met à flotter dans des bulles', emoji: 'Bubbles' },
+    { id: 'comete', label: 'Comète', texte: 'une comète qui passe tout près', emoji: 'Comet', themes: ['espace', 'reves'] },
+  ],
+};
+
+export interface Composition {
+  theme: string;
+  heros?: string;
+  lieu?: string;
+  compagnon?: string;
+  objet?: string;
+  rebondissement?: string;
+  /** Idée libre de l'enfant ou du parent (par exemple dictée). */
+  idee?: string;
+  age: AgeBand;
+  duree: Duree;
+}
+
+export function findTheme(id: string): Theme {
+  const theme = THEMES.find((t) => t.id === id);
+  if (!theme) throw new Error(`Thème inconnu : ${id}. Possibles : ${THEMES.map((t) => t.id).join(', ')}.`);
+  return theme;
+}
+
+export function findIngredient(kind: Kind, id: string | undefined): Ingredient | undefined {
+  return id ? INGREDIENTS[kind].find((i) => i.id === id) : undefined;
+}
+
+/** Vérifie une composition reçue de l'extérieur (l'application) et la ramène aux choix du catalogue. */
+export function checkComposition(raw: unknown, ages: readonly string[]): Composition {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const theme = findTheme(String(r.theme ?? '')).id;
+  const age = String(r.age ?? '6-8');
+  if (!ages.includes(age)) throw new Error(`Tranche d'âge inconnue : ${age}.`);
+  const duree = String(r.duree ?? 'courte');
+  if (!(DUREES as readonly string[]).includes(duree)) throw new Error(`Durée inconnue : ${duree}.`);
+  const composition: Composition = { theme, age: age as AgeBand, duree: duree as Duree };
+  for (const kind of KINDS) {
+    const id = r[kind];
+    if (id === undefined || id === null || id === '') continue;
+    if (!findIngredient(kind, String(id))) throw new Error(`${kind} inconnu : ${String(id)}.`);
+    composition[kind] = String(id);
+  }
+  const idee = typeof r.idee === 'string' ? r.idee.replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+  if (idee) composition.idee = idee;
+  return composition;
+}
+
+/** Tirage au sort : un thème (sauf s'il est imposé), puis des ingrédients qui lui vont bien. */
+export function drawComposition(base: Partial<Composition> & Pick<Composition, 'age' | 'duree'>, random: () => number = Math.random): Composition {
+  const pick = <T>(items: T[]): T => items[Math.floor(random() * items.length)];
+  const theme = base.theme ? findTheme(base.theme) : pick(THEMES);
+  const draw = (kind: Kind): string => {
+    const fitting = INGREDIENTS[kind].filter((i) => !i.themes || i.themes.includes(theme.id));
+    // Les ingrédients faits pour ce thème comptent triple.
+    const weighted = fitting.flatMap((i) => (i.themes ? [i, i, i] : [i]));
+    return pick(weighted).id;
+  };
+  return {
+    ...base,
+    theme: theme.id,
+    heros: base.heros ?? draw('heros'),
+    lieu: base.lieu ?? draw('lieu'),
+    compagnon: base.compagnon ?? draw('compagnon'),
+    objet: base.objet ?? draw('objet'),
+    rebondissement: base.rebondissement ?? draw('rebondissement'),
+  };
+}
+
+/** Le catalogue tel que l'application le reçoit. */
+export function publicCatalogue(ages: { id: string; label: string }[]) {
+  return { themes: THEMES, ingredients: INGREDIENTS, durees: DUREES.map((id) => ({ id, ...DUREE_PROFILES[id] })), ages };
+}

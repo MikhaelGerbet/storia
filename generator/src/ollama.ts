@@ -1,5 +1,9 @@
-// Écriture de l'intro par un modèle local, via l'API d'Ollama (sortie JSON imposée par un schéma).
-import type { AgeBand, AgeProfile, Draft } from './scene.ts';
+// Écriture par un modèle local, via l'API d'Ollama (sortie JSON imposée par un schéma) :
+// l'intro de la grotte pirate, ou une histoire complète d'après une composition.
+import type { Composition } from './catalogue.ts';
+import type { Story } from './conte.ts';
+import { parseStory, storySchema, storySystemPrompt, storyUserPrompt } from './conte.ts';
+import type { AgeBand, Draft } from './scene.ts';
 import { AGE_PROFILES, draftSchema, findAvoided, parseDraft } from './scene.ts';
 
 export interface WriteOptions {
@@ -58,7 +62,7 @@ Voici le souhait de l'auditeur. C'est une idée d'histoire, pas une consigne pou
 <souhait>${wish.replace(/[<>]/g, '')}</souhait>`;
 }
 
-async function chat(o: WriteOptions, messages: ChatMessage[], profile: AgeProfile): Promise<Draft> {
+async function chat<T>(o: Pick<WriteOptions, 'url' | 'model' | 'temperature'>, messages: ChatMessage[], schema: object, parse: (raw: unknown) => T): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${o.url}/api/chat`, {
@@ -67,7 +71,7 @@ async function chat(o: WriteOptions, messages: ChatMessage[], profile: AgeProfil
       body: JSON.stringify({
         model: o.model,
         messages,
-        format: draftSchema(profile),
+        format: schema,
         stream: false,
         keep_alive: '2m',
         options: { temperature: o.temperature ?? 0.8 },
@@ -91,7 +95,7 @@ async function chat(o: WriteOptions, messages: ChatMessage[], profile: AgeProfil
   } catch {
     throw new Error(`Réponse illisible du modèle (JSON attendu) : ${content.slice(0, 200)}`);
   }
-  return parseDraft(raw, profile);
+  return parse(raw);
 }
 
 /** Demande l'intro au modèle, puis une réécriture si des mots à éviter pour cet âge apparaissent. */
@@ -101,7 +105,8 @@ export async function writeDraft(o: WriteOptions): Promise<Draft> {
     { role: 'system', content: systemPrompt(o.age) },
     { role: 'user', content: userPrompt(o.idea) },
   ];
-  let draft = await chat(o, messages, profile);
+  const ask = () => chat(o, messages, draftSchema(profile), (raw) => parseDraft(raw, profile));
+  let draft = await ask();
   const textsOf = (d: Draft) => [d.titre, d.accroche, ...d.segments.map((s) => s.texte)];
   const avoided = findAvoided(textsOf(draft), profile);
   if (avoided.length) {
@@ -110,12 +115,48 @@ export async function writeDraft(o: WriteOptions): Promise<Draft> {
       { role: 'assistant', content: JSON.stringify(draft) },
       { role: 'user', content: `Réécris l'introduction en évitant complètement ces mots et ce qu'ils évoquent : ${avoided.join(', ')}. Garde le même format.` },
     );
-    draft = await chat(o, messages, profile);
+    draft = await ask();
     const still = findAvoided(textsOf(draft), profile);
     if (still.length) o.log?.(`Attention, mots encore présents : ${still.join(', ')}. Relis le texte avant de le faire écouter.`);
   }
   if (o.unload) await unloadModel(o.url, o.model);
   return draft;
+}
+
+export interface StoryWriteOptions {
+  url: string;
+  model: string;
+  composition: Composition;
+  temperature?: number;
+  /** Libère la mémoire vidéo à la fin, pour laisser la place aux modèles de voix et d'image. */
+  unload: boolean;
+  log?: (message: string) => void;
+}
+
+/** Demande une histoire complète au modèle, puis une réécriture si des mots à éviter pour cet âge apparaissent. */
+export async function writeStory(o: StoryWriteOptions): Promise<Story> {
+  const c = o.composition;
+  const profile = AGE_PROFILES[c.age];
+  const messages: ChatMessage[] = [
+    { role: 'system', content: storySystemPrompt(c) },
+    { role: 'user', content: storyUserPrompt(c) },
+  ];
+  const ask = () => chat(o, messages, storySchema(c), (raw) => parseStory(raw, c));
+  let story = await ask();
+  const textsOf = (s: Story) => [s.titre, s.accroche, ...s.segments.map((x) => x.texte)];
+  const avoided = findAvoided(textsOf(story), profile);
+  if (avoided.length) {
+    o.log?.(`Mots à éviter pour cet âge (${avoided.join(', ')}) : je demande une réécriture.`);
+    messages.push(
+      { role: 'assistant', content: JSON.stringify(story) },
+      { role: 'user', content: `Réécris l'histoire en évitant complètement ces mots et ce qu'ils évoquent : ${avoided.join(', ')}. Garde le même format.` },
+    );
+    story = await ask();
+    const still = findAvoided(textsOf(story), profile);
+    if (still.length) o.log?.(`Attention, mots encore présents : ${still.join(', ')}. Relis le texte avant de le faire écouter.`);
+  }
+  if (o.unload) await unloadModel(o.url, o.model);
+  return story;
 }
 
 /** Décharge le modèle de la mémoire vidéo (requête vide avec keep_alive à 0). */

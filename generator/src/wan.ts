@@ -192,6 +192,8 @@ export interface WanRun {
   graceMs?: number;
   /** Silence au-delà duquel Wan2GP est considéré comme bloqué (30 minutes par défaut). */
   silenceMs?: number;
+  /** Avancement des étapes de calcul, de 0 à 1, lu dans les barres de progression de Wan2GP. */
+  onSteps?: (fraction: number) => void;
 }
 
 /** Lance un passage de Wan2GP et renvoie le fichier produit. */
@@ -229,6 +231,9 @@ export async function runWan(run: WanRun, name: string, settings: Record<string,
       logFile.write(chunk);
       alive();
       recent = (recent + chunk.toString('utf8')).slice(-6000);
+      // Barres de progression du calcul (« 2/4 [00:31<00:31, … ») ; pas celles des téléchargements (« 6.89G/6.89G »).
+      const steps = [...chunk.toString('utf8').matchAll(/(?<![\d.])(\d+)\/(\d+) \[/g)].pop();
+      if (steps && run.onSteps && Number(steps[2]) > 0 && Number(steps[2]) < 1000) run.onSteps(Math.min(1, Number(steps[1]) / Number(steps[2])));
       tail = (tail + chunk.toString('utf8')).slice(-500);
       // Sous Windows avec une carte AMD, un processus PyTorch peut rester bloqué au moment de quitter
       // (pytorch/pytorch#160759) : une fois la file terminée, on lui laisse un moment, puis on l'arrête.

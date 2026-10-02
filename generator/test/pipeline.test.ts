@@ -69,7 +69,7 @@ test('la chaîne complète produit une histoire jouable', async (t) => {
   assert.deepEqual(result.scene.cues.filter((c) => c.run === 'revealShip'), [{ at: 2, when: 'start', delay: 0, run: 'revealShip' }]);
   assert.deepEqual(result.scene.cues.find((c) => c.run === 'bell'), { at: 5, when: 'end', delay: 0.3, run: 'bell' });
   // Fichiers rangés et WAV réparés
-  assert.deepEqual((await readdir(result.folder)).sort(), ['image.png', 'index.html', 'prompt-image.txt', 'scene.json', 'voix']);
+  assert.deepEqual((await readdir(result.folder)).sort(), ['fiche.json', 'image.png', 'index.html', 'prompt-image.txt', 'scene.json', 'voix']);
   assert.equal((await readdir(path.join(result.folder, 'voix'))).length, 6);
   const wav = await readFile(path.join(result.folder, 'voix', '01.wav'));
   assert.equal(wav.readUInt32LE(40), wav.length - 44);
@@ -91,7 +91,7 @@ test('sans voix ni image, la page garde la voix du navigateur et l’illustratio
   assert.equal(mock.calls.tts.length, 0);
   assert.equal(mock.calls.prompts.length, 0);
   assert.equal(mock.calls.unload.length, 0);
-  assert.deepEqual((await readdir(result.folder)).sort(), ['index.html', 'prompt-image.txt', 'scene.json']);
+  assert.deepEqual((await readdir(result.folder)).sort(), ['fiche.json', 'index.html', 'prompt-image.txt', 'scene.json']);
   const pkg = packageOf(await readFile(result.htmlPaths[0], 'utf8'));
   assert.equal(pkg.voices, undefined);
   assert.equal(pkg.image, undefined);
@@ -120,7 +120,7 @@ test('une scène reprise est relue par plusieurs voix, comparées à l’aveugle
   assert.equal(result.scene.title, 'Le Navire endormi');
   for (const mock of [voiceA, voiceB]) assert.deepEqual(mock.calls.tts, result.scene.segments.map((s) => s.text));
   const files = (await readdir(result.folder)).sort();
-  assert.deepEqual(files, ['correspondance.txt', 'prompt-image.txt', 'scene.json', 'voix', 'voix-A.html', 'voix-B.html']);
+  assert.deepEqual(files, ['correspondance.txt', 'fiche.json', 'prompt-image.txt', 'scene.json', 'voix', 'voix-A.html', 'voix-B.html']);
   const mapping = await readFile(path.join(result.folder, 'correspondance.txt'), 'utf8');
   assert.deepEqual(mapping.trim().split('\n').map((l) => l.split(' : ')[1]).sort(), [voiceA.url, voiceB.url].sort());
   for (const letter of ['A', 'B']) {
@@ -175,7 +175,7 @@ test('une image et une animation déjà faites sont reprises telles quelles, san
   assert.match(pkg.image, /^data:image\/png;base64,/);
   assert.equal(pkg.video, `data:video/mp4;base64,${Buffer.from('fausse vidéo').toString('base64')}`);
   assert.match(pkg.credits, /animation boucle\.mp4/);
-  assert.deepEqual((await readdir(result.folder)).sort(), ['animation.mp4', 'image.png', 'index.html', 'prompt-image.txt', 'scene.json']);
+  assert.deepEqual((await readdir(result.folder)).sort(), ['animation.mp4', 'fiche.json', 'image.png', 'index.html', 'prompt-image.txt', 'scene.json']);
   await assert.rejects(runPipeline(options(dir, 'http://127.0.0.1:9', { sceneFile, withVoice: false, videoPath: imagePath })), /Animation non reconnue/);
 });
 

@@ -91,6 +91,10 @@ export interface PlayerScene {
   title: string;
   audience: string;
   intro: number;
+  /** Ambiance sonore de fond (grotte, mer, foret, espace, chateau, nuit) ; absente : la grotte de l'intro pirate. */
+  ambiance?: string;
+  /** Thème du catalogue, pour l'illustration provisoire quand il n'y a pas d'image. */
+  theme?: string;
   segments: { text: string; pause: number }[];
   cues: PlayerCue[];
 }

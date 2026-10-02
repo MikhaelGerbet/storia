@@ -711,6 +711,34 @@ function paintStandIn() {
 }
 
 // Pour une image déposée : effets réglés par la seule hauteur de l'eau.
+// Illustration provisoire des histoires hors grotte pirate, tant qu'elles n'ont pas d'image : un ciel de nuit étoilé
+// aux couleurs du thème, une lune et des collines.
+function paintSky(colors) {
+  const w = 1600, h = 1000, cv = makeCanvas(w, h), g = cv.getContext('2d');
+  const [light, dark] = colors || ['#9487F0', '#1A1838'];
+  const sky = g.createLinearGradient(0, 0, 0, h);
+  sky.addColorStop(0, '#05070f'); sky.addColorStop(0.55, dark); sky.addColorStop(1, light);
+  g.fillStyle = sky; g.fillRect(0, 0, w, h);
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+  for (let i = 0; i < 320; i++) {
+    const x = rnd() * w, y = rnd() * h * 0.78, r = rnd() * 1.7 + 0.3;
+    g.globalAlpha = 0.35 + rnd() * 0.65; g.fillStyle = '#ffffff';
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+  g.globalAlpha = 1;
+  const mx = w * 0.72, my = h * 0.24, mr = 64;
+  const halo = g.createRadialGradient(mx, my, mr * 0.6, mx, my, mr * 3.4);
+  halo.addColorStop(0, 'rgba(255,246,214,0.35)'); halo.addColorStop(1, 'rgba(255,246,214,0)');
+  g.fillStyle = halo; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#fff4d6'; g.beginPath(); g.arc(mx, my, mr, 0, Math.PI * 2); g.fill();
+  [[0.86, 'rgba(6,10,20,0.55)', 180, 34], [0.9, 'rgba(6,10,20,0.92)', 240, 26]].forEach(([base, color, wave, amp]) => {
+    g.fillStyle = color; g.beginPath(); g.moveTo(0, h);
+    for (let x = 0; x <= w; x += 16) g.lineTo(x, h * base + Math.sin(x / wave) * amp + Math.sin(x / 57) * 6);
+    g.lineTo(w, h); g.closePath(); g.fill();
+  });
+  return cv;
+}
+
 function customMeta(waterline) {
   return {
     moon: [0.7, 0.2],
@@ -1083,6 +1111,25 @@ class Sparks {
    6. AUDIO : ambiance de grotte, bruitages et musique, synthétisés en direct.
    Dans l'application, ils viendront d'une bibliothèque de sons enregistrés.
    ========================================================================= */
+// Les ambiances de fond : niveaux du grondement et du souffle, et petits sons programmés
+// ([premier départ, écart minimal, écart variable] en secondes).
+const AMBIENCE_MIX = {
+  grotte: { rumble: 0.32, wind: 0.035, windHz: 620 },
+  mer: { rumble: 0.22, wind: 0.045, windHz: 720 },
+  foret: { rumble: 0.06, wind: 0.06, windHz: 1500 },
+  espace: { rumble: 0.1, wind: 0, windHz: 600, drone: true },
+  chateau: { rumble: 0.14, wind: 0.075, windHz: 520 },
+  nuit: { rumble: 0.05, wind: 0.025, windHz: 950 },
+};
+const AMBIENCE_EVENTS = {
+  grotte: { wave: [0.2, 3.6, 3.2], lap: [0.6, 0.35, 1.1], drip: [4.5, 3, 5] },
+  mer: { wave: [0.2, 2.6, 2.4], lap: [0.6, 0.3, 0.9] },
+  foret: { chirp: [1.5, 2.5, 5], gust: [6, 10, 8] },
+  espace: { ping: [2, 4, 6] },
+  chateau: { gust: [1, 8, 7] },
+  nuit: { cricket: [0.5, 0.7, 1.6], hoot: [9, 14, 12] },
+};
+
 class AudioEngine {
   constructor(context) {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -1166,34 +1213,129 @@ class AudioEngine {
     }
     return buf;
   }
-  startAmbience() {
+  startAmbience(kind = 'grotte') { // fond sonore : grotte, mer, foret, espace, chateau ou nuit
     const ctx = this.ctx, t = ctx.currentTime;
-    const rumble = ctx.createBufferSource(); rumble.buffer = this.brown; rumble.loop = true; // grondement grave
-    const rl = ctx.createBiquadFilter(); rl.type = 'lowpass'; rl.frequency.value = 150;
-    const rg = ctx.createGain(); rg.gain.value = 0.32;
-    rumble.connect(rl); rl.connect(rg); rg.connect(this.ambIn);
-    rumble.start(t); this.track(rumble);
-    const wind = ctx.createBufferSource(); wind.buffer = this.pink; wind.loop = true; // souffle à l'entrée de la grotte
-    const wb = ctx.createBiquadFilter(); wb.type = 'bandpass'; wb.frequency.value = 620; wb.Q.value = 3.5;
-    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.045;
-    const lg = ctx.createGain(); lg.gain.value = 160;
-    lfo.connect(lg); lg.connect(wb.frequency); lfo.start(t); this.track(lfo);
-    const wg = ctx.createGain(); wg.gain.value = 0.035;
-    wind.connect(wb); wb.connect(wg); wg.connect(this.ambIn);
-    wind.start(t, 1.3); this.track(wind);
+    const m = AMBIENCE_MIX[kind] || AMBIENCE_MIX.grotte;
+    if (m.rumble) { // grondement grave
+      const rumble = ctx.createBufferSource(); rumble.buffer = this.brown; rumble.loop = true;
+      const rl = ctx.createBiquadFilter(); rl.type = 'lowpass'; rl.frequency.value = 150;
+      const rg = ctx.createGain(); rg.gain.value = m.rumble;
+      rumble.connect(rl); rl.connect(rg); rg.connect(this.ambIn);
+      rumble.start(t); this.track(rumble);
+    }
+    if (m.wind) { // souffle continu (entrée de la grotte, feuillages, remparts)
+      const wind = ctx.createBufferSource(); wind.buffer = this.pink; wind.loop = true;
+      const wb = ctx.createBiquadFilter(); wb.type = 'bandpass'; wb.frequency.value = m.windHz; wb.Q.value = 3.5;
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 0.045;
+      const lg = ctx.createGain(); lg.gain.value = m.windHz * 0.26;
+      lfo.connect(lg); lg.connect(wb.frequency); lfo.start(t); this.track(lfo);
+      const wg = ctx.createGain(); wg.gain.value = m.wind;
+      wind.connect(wb); wb.connect(wg); wg.connect(this.ambIn);
+      wind.start(t, 1.3); this.track(wind);
+    }
+    if (m.drone) this.drone(t);
     this.ambLevel.gain.cancelScheduledValues(t);
     this.ambLevel.gain.setValueAtTime(0.0001, t);
     this.ambLevel.gain.linearRampToValueAtTime(0.7, t + 2.8);
-    this.nextWave = t + 0.2; this.nextLap = t + 0.6; this.nextDrip = t + 4.5;
-    const tick = () => { // vagues, clapotis et gouttes lointaines, programmés au fil de l'eau
+    // Les petits sons de l'ambiance, programmés au fil de l'eau : [premier départ, écart minimal, écart variable]
+    const plan = AMBIENCE_EVENTS[kind] || AMBIENCE_EVENTS.grotte;
+    const play = {
+      wave: (w) => this.wave(w, 1),
+      lap: (w) => this.lap(w),
+      drip: (w) => this.drip(w, 0.35, (Math.random() - 0.5) * 1.4, this.ambIn),
+      chirp: (w) => this.chirp(w),
+      ping: (w) => this.ping(w),
+      gust: (w) => this.gust(w, 0.45, this.ambIn),
+      cricket: (w) => this.cricket(w),
+      hoot: (w) => this.hoot(w),
+    };
+    const next = {};
+    Object.entries(plan).forEach(([name, [first]]) => { next[name] = t + first; });
+    const tick = () => {
       const ahead = ctx.currentTime + 2.5;
-      while (this.nextWave < ahead) { this.wave(this.nextWave, 1); this.nextWave += 3.6 + Math.random() * 3.2; }
-      while (this.nextLap < ahead) { this.lap(this.nextLap); this.nextLap += 0.35 + Math.random() * 1.1; }
-      while (this.nextDrip < ahead) { this.drip(this.nextDrip, 0.35, (Math.random() - 0.5) * 1.4, this.ambIn); this.nextDrip += 3 + Math.random() * 5; }
+      Object.entries(plan).forEach(([name, [, gap, spread]]) => {
+        while (next[name] < ahead) { play[name](next[name]); next[name] += gap + Math.random() * spread; }
+      });
     };
     tick();
     clearInterval(this.ticker);
     this.ticker = setInterval(tick, 500);
+  }
+  gust(when, level = 1, bus = this.sfx) { // un souffle de vent qui passe d'un côté à l'autre
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource(); src.buffer = this.pink; src.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4;
+    const g = ctx.createGain();
+    const rise = 0.9 + Math.random() * 0.6, fall = 1.8 + Math.random() * 1.2;
+    bp.frequency.setValueAtTime(380, when);
+    bp.frequency.linearRampToValueAtTime(1100 + Math.random() * 500, when + rise);
+    bp.frequency.linearRampToValueAtTime(450, when + rise + fall);
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.linearRampToValueAtTime(0.16 * level, when + rise);
+    g.gain.linearRampToValueAtTime(0.0001, when + rise + fall);
+    src.connect(bp); bp.connect(g);
+    if (ctx.createStereoPanner) {
+      const pn = ctx.createStereoPanner(), side = Math.random() < 0.5 ? -1 : 1;
+      pn.pan.setValueAtTime(-0.7 * side, when); pn.pan.linearRampToValueAtTime(0.7 * side, when + rise + fall);
+      g.connect(pn); pn.connect(bus);
+    } else g.connect(bus);
+    src.start(when, Math.random() * 4); src.stop(when + rise + fall + 0.2); this.track(src);
+  }
+  chirp(when) { // un oiseau au loin : deux à quatre petits sifflements
+    const ctx = this.ctx, n = 2 + Math.floor(Math.random() * 3), base = 2600 + Math.random() * 1400, pan = (Math.random() - 0.5) * 1.6;
+    for (let k = 0; k < n; k++) {
+      const t0 = when + k * (0.11 + Math.random() * 0.05);
+      const o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(base, t0); o.frequency.exponentialRampToValueAtTime(base * (1.25 + Math.random() * 0.3), t0 + 0.07);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.025, t0 + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.09);
+      o.connect(g); this.pan(g, pan).connect(this.ambIn);
+      o.start(t0); o.stop(t0 + 0.1); this.track(o);
+    }
+  }
+  cricket(when) { // un grillon : trois pulsations aiguës
+    const ctx = this.ctx, pan = (Math.random() - 0.5) * 1.8, f = 4200 + Math.random() * 500;
+    for (let k = 0; k < 3; k++) {
+      const t0 = when + k * 0.045;
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.012, t0 + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.035);
+      o.connect(g); this.pan(g, pan).connect(this.ambIn);
+      o.start(t0); o.stop(t0 + 0.04); this.track(o);
+    }
+  }
+  hoot(when) { // une chouette, très loin
+    const ctx = this.ctx, pan = (Math.random() - 0.5) * 1.4;
+    [0, 0.55].forEach((d, k) => {
+      const t0 = when + d, o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(k ? 400 : 430, t0); o.frequency.linearRampToValueAtTime(k ? 330 : 380, t0 + 0.35);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.03, t0 + 0.06); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.42);
+      o.connect(g); this.pan(g, pan).connect(this.ambIn);
+      o.start(t0); o.stop(t0 + 0.45); this.track(o);
+    });
+  }
+  drone(t) { // l'espace : une nappe grave qui respire
+    const ctx = this.ctx;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 320;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.05;
+    const lg = ctx.createGain(); lg.gain.value = 120;
+    lfo.connect(lg); lg.connect(lp.frequency); lfo.start(t); this.track(lfo);
+    lp.connect(this.ambIn);
+    [[55, 0.05], [82.4, 0.035], [110.2, 0.02]].forEach(([f, a]) => {
+      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f; o.detune.value = (Math.random() - 0.5) * 10;
+      const g = ctx.createGain(); g.gain.value = a;
+      o.connect(g); g.connect(lp); o.start(t); this.track(o);
+    });
+  }
+  ping(when) { // une étoile qui tinte, très loin
+    const ctx = this.ctx, f = [1318.5, 1568, 1760, 2093][Math.floor(Math.random() * 4)];
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, when); g.gain.exponentialRampToValueAtTime(0.02, when + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, when + 2.2);
+    o.connect(g); this.pan(g, (Math.random() - 0.5) * 1.6).connect(this.ambIn);
+    this.send(g, 0.6);
+    o.start(when); o.stop(when + 2.3); this.track(o);
   }
   wave(when, strength) {
     const ctx = this.ctx;
@@ -1309,7 +1451,7 @@ class AudioEngine {
       c.start(t, Math.random() * 5); c.stop(t + 0.05); this.track(c);
     }
   }
-  shimmer(when) { // quatre notes cristallines, discrètes (coupées avec la musique)
+  shimmer(when, bus = this.musicIn) { // quatre notes cristallines, discrètes (coupées avec la musique)
     const ctx = this.ctx;
     [880, 1046.5, 1318.5, 1760].forEach((f, i) => {
       const t = when + i * 0.14;
@@ -1318,7 +1460,7 @@ class AudioEngine {
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(0.045, t + 0.01);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
-      o.connect(g); g.connect(this.musicIn);
+      o.connect(g); g.connect(bus);
       o.start(t); o.stop(t + 1.5); this.track(o);
     });
   }
@@ -1508,7 +1650,10 @@ let dripCount = 0;
 let wakeLock = null;
 
 const CUES = {
-  ambience: () => { audio.startAmbience(); audio.musicStart(); },
+  ambience: () => { audio.startAmbience(SCENE.ambiance || 'grotte'); audio.musicStart(); },
+  wind: () => audio.gust(audio.now()),
+  magic: () => audio.shimmer(audio.now(), audio.sfx),
+  reveal: () => { tween('spot', 1, 3.4); audio.shimmer(audio.now() + 0.5, audio.sfx); },
   dawn: () => tween('reveal', 1, 6.5),
   drip: () => {
     const k = dripCount++;
@@ -1853,6 +1998,11 @@ async function applyPackage(pkg) {
   $('#start .eyebrow').textContent = `Générée sur ton PC · ${pkg.audienceLabel || pkg.scene.audience || ''}`;
   if (pkg.teaser) $('#start .lead').textContent = `${pkg.teaser} Monte le son, ou mieux : mets un casque.`;
   if (pkg.effects && Number.isFinite(pkg.effects.waterline)) $('#waterline').value = String(pkg.effects.waterline);
+  if (!pkg.image && !pkg.video && pkg.scene.theme && pkg.scene.theme !== 'pirates') {
+    const cv = paintSky(pkg.palette), wl = 0.97; // pas d'image : un ciel aux couleurs du thème plutôt que la grotte pirate
+    standIn = { image: cv, fx: customFx(wl, cv.width / cv.height), w: cv.width, h: cv.height, meta: customMeta(wl) };
+    setScene(standIn);
+  }
   if (pkg.image) await useImageSource(pkg.image, 'image générée');
   if (pkg.video) {
     const type = pkg.video.slice(5, pkg.video.indexOf(';')) || 'video/mp4';

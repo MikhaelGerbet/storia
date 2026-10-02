@@ -15,6 +15,8 @@ export interface StoryPackage {
   image?: string;
   /** Animation en boucle (MP4 ou WebM) en data URI, jouée à la place de l'image. */
   video?: string;
+  /** Couleurs du thème (clair, sombre), pour l'illustration provisoire quand il n'y a pas d'image. */
+  palette?: [string, string];
   /** Une voix par segment, en data URI. Absente : la voix du navigateur est gardée. */
   voices?: string[];
   createdAt: string;

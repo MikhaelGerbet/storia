@@ -1,8 +1,11 @@
 // La chaîne complète : texte, puis voix et image en parallèle, puis assemblage.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { Composition } from './catalogue.ts';
+import { findTheme } from './catalogue.ts';
 import { generateImage, prepareWorkflow } from './comfy.ts';
-import { writeDraft } from './ollama.ts';
+import { arrangeStoryEffects, storyImagePrompt, storyKeywords, storyLoopPrompt, toStoryScene } from './conte.ts';
+import { writeDraft, writeStory } from './ollama.ts';
 import { buildPlayerHtml, toDataUri } from './package.ts';
 import type { StoryPackage } from './package.ts';
 import { AGE_PROFILES, arrangeEffects, imagePrompt, loopPrompt, toPlayerScene } from './scene.ts';
@@ -25,9 +28,23 @@ export interface WanOptions {
   modelsDir?: string;
 }
 
+export type PipelineStep = 'texte' | 'voix' | 'image' | 'animation' | 'assemblage';
+
+/** Où en est la fabrication : l'étape en cours et son avancement, de 0 à 1. */
+export interface PipelineProgress {
+  etape: PipelineStep;
+  avancement: number;
+  detail?: string;
+}
+
 export interface PipelineOptions {
   age: AgeBand;
   idea?: string;
+  /** Histoire complète d'après une composition (thème, héros, lieu…) plutôt que l'intro de la grotte pirate. */
+  composition?: Composition;
+  /** Dossier exact de l'histoire (sinon : date et titre, dans outDir). */
+  folder?: string;
+  onProgress?: (progress: PipelineProgress) => void;
   /** Reprend le texte et les repères d'une scène déjà écrite (scene.json) au lieu d'appeler Ollama. */
   sceneFile?: string;
   model: string;
@@ -53,12 +70,30 @@ export interface PipelineOptions {
   log: (message: string) => void;
 }
 
+export interface StoryMeta {
+  titre: string;
+  accroche: string;
+  motsCles: string[];
+  /** Tout le texte lu, pour la recherche. */
+  texte: string;
+  theme?: string;
+  ambiance?: string;
+  age: AgeBand;
+  /** Durée d'écoute approximative, voix et pauses comprises. */
+  dureeSecondes: number;
+  /** Fichiers rangés dans le dossier de l'histoire. */
+  image?: string;
+  animation?: string;
+  page: string;
+}
+
 export interface PipelineResult {
   folder: string;
   /** Une page par voix comparée, sinon une seule. */
   htmlPaths: string[];
   scene: PlayerScene;
   seconds: number;
+  meta: StoryMeta;
 }
 
 export function slugify(text: string): string {
@@ -172,13 +207,32 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     : null;
   const voiceSample = o.voiceSamplePath ? { bytes: await readFile(o.voiceSamplePath), name: path.basename(o.voiceSamplePath) } : undefined;
 
+  const progress = (etape: PipelineStep, avancement: number, detail?: string) => o.onProgress?.({ etape, avancement, detail });
   let scene: PlayerScene;
   let teaser = '';
   let prompt: string;
+  let motion = loopPrompt(o.age);
+  let keywords: string[] = [];
+  progress('texte', 0);
   if (o.sceneFile) {
     scene = await readScene(o.sceneFile);
     prompt = imagePrompt({ titre: scene.title, accroche: '', segments: [], decor_en: '' }, o.age);
     o.log(`1/3 Texte repris de ${path.basename(o.sceneFile)} : « ${scene.title} », ${scene.segments.length} segments`);
+  } else if (o.composition) {
+    const c = o.composition;
+    o.log(`1/3 Écriture de l'histoire avec ${o.model}…`);
+    // Le modèle de texte est déchargé ensuite : la voix et Wan ont besoin de la carte graphique.
+    const written = await writeStory({ url: o.ollamaUrl, model: o.model, composition: c, unload: true, log: o.log });
+    const arranged = arrangeStoryEffects(written.segments);
+    const story = { ...written, segments: arranged.segments };
+    scene = toStoryScene(story, c);
+    teaser = story.accroche;
+    prompt = storyImagePrompt(story, c);
+    motion = storyLoopPrompt(story, c);
+    keywords = storyKeywords(story, c);
+    o.log(`    « ${scene.title} » : ${scene.segments.length} segments, ambiance ${story.ambiance} (${elapsed()})`);
+    story.segments.forEach((s, i) => o.log(`    ${i + 1}. ${s.texte}${s.effet === 'aucun' ? '' : `   [${s.effet}]`}`));
+    arranged.notes.forEach((note) => o.log(`    · ${note}`));
   } else {
     o.log(`1/3 Écriture du texte avec ${o.model}…`);
     const written = await writeDraft({ url: o.ollamaUrl, model: o.model, age: o.age, idea: o.idea, unload: o.withImage, log: o.log });
@@ -192,9 +246,10 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     arranged.notes.forEach((note) => o.log(`    · ${note}`));
   }
 
+  progress('texte', 1, scene.title);
   const ttsUrls = o.withVoice ? o.ttsUrls : [];
   const comparing = ttsUrls.length > 1;
-  const folder = path.join(o.outDir, `${timestamp()}-${slugify(scene.title)}${comparing ? '-comparaison' : ''}`);
+  const folder = o.folder ?? path.join(o.outDir, `${timestamp()}-${slugify(scene.title)}${comparing ? '-comparaison' : ''}`);
   await mkdir(folder, { recursive: true });
   const media = [comparing ? `${ttsUrls.length} voix` : ttsUrls.length ? 'voix' : '', o.withImage && !wan ? 'image' : ''].filter(Boolean).join(' et ');
   const wanStep = wan ? `${givenImage ? 'animation' : 'image et animation'} avec Wan 2.2` : '';
@@ -210,7 +265,15 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
         // Toute la scène d'un coup : le serveur lit chaque phrase d'un seul souffle et vérifie chaque lecture.
         const told = await narrate(
           scene.segments.map((s) => ({ text: s.text, pause: s.pause })),
-          { url, voice: o.voice, voiceSample, onEvent: (event) => describeEvent(event).forEach((line) => o.log(tag + line)) },
+          {
+            url,
+            voice: o.voice,
+            voiceSample,
+            onEvent: (event) => {
+              describeEvent(event).forEach((line) => o.log(tag + line));
+              if (event.type === 'phrase' && event.total) progress('voix', (event.numero ?? 0) / event.total, `phrase ${event.numero} sur ${event.total}`);
+            },
+          },
         );
         set = { voices: told.clips, pauses: told.pauses, report: told.report };
       } catch (err) {
@@ -224,6 +287,7 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
           const voice = await synthesize(segment.text, { url, voice: o.voice, voiceSample });
           voices.push(voice);
           o.log(`${tag}phrase ${i + 1}/${n} lue en ${duration((performance.now() - begun) / 1000)} (${wavInfo(voice).duration.toFixed(1)} s de parole)`);
+          progress('voix', (i + 1) / n, `phrase ${i + 1} sur ${n}`);
         }
         set = { voices, pauses: scene.segments.map((s) => s.pause), report: [] };
       }
@@ -237,15 +301,16 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
   const imageTask = (async () => {
     if (givenImage) return givenImage;
     if (!workflowRaw) return null;
+    progress('image', 0);
     const seed = o.seed ?? Math.floor(Math.random() * 2 ** 32);
     const image = await generateImage({ url: o.comfyUrl, workflow: prepareWorkflow(workflowRaw, prompt, seed) });
     o.log(`    image : graine ${seed} (${elapsed()})`);
+    progress('image', 1);
     return image;
   })();
   const [voiceSets, made] = await Promise.all([voicesTask, imageTask]);
   let image = made;
 
-  const motion = loopPrompt(o.age);
   if (wan && o.wan) {
     // La carte graphique passe à Wan : le serveur de voix libère d'abord la sienne (il la reprendra au besoin).
     await Promise.all(ttsUrls.map((url) => releaseVoice(url)));
@@ -254,22 +319,32 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     let still = o.imagePath;
     if (!still) {
       o.log(`    image : ${o.wan.imageModel} dans Wan2GP, graine ${seed}…`);
-      still = await runWan(run, 'image', stillSettings({ prompt, seed, model: o.wan.imageModel }), 'image');
+      progress('image', 0);
+      still = await runWan({ ...run, onSteps: (f) => progress('image', f) }, 'image', stillSettings({ prompt, seed, model: o.wan.imageModel }), 'image');
       image = await readMedia(still, 'image');
       o.log(`    image : prête (${elapsed()})`);
+      progress('image', 1);
     }
     o.log(`    animation : Wan 2.2, ${o.wan.steps} étapes, boucle de 5 secondes. Compte plusieurs minutes…`);
-    video = await readMedia(await runWan(run, 'animation', loopSettings({ prompt: motion, image: still, seed, steps: o.wan.steps }), 'video'), 'video');
+    progress('animation', 0);
+    video = await readMedia(
+      await runWan({ ...run, onSteps: (f) => progress('animation', f) }, 'animation', loopSettings({ prompt: motion, image: still, seed, steps: o.wan.steps }), 'video'),
+      'video',
+    );
     o.log(`    animation : prête (${elapsed()})`);
+    progress('animation', 1);
   }
 
   o.log('3/3 Assemblage…');
+  progress('assemblage', 0);
   await writeFile(path.join(folder, 'scene.json'), `${JSON.stringify(scene, null, 2)}\n`);
   await writeFile(path.join(folder, 'prompt-image.txt'), `${prompt}\n`);
   if (wan) await writeFile(path.join(folder, 'prompt-animation.txt'), `${motion}\n`);
-  if (image) await writeFile(path.join(folder, `image.${IMAGE_EXT[image.mime] ?? 'png'}`), image.bytes);
+  const imageFile = image ? `image.${IMAGE_EXT[image.mime] ?? 'png'}` : undefined;
+  if (image && imageFile) await writeFile(path.join(folder, imageFile), image.bytes);
   const imageUri = image ? toDataUri(image.bytes, image.mime) : undefined;
-  if (video) await writeFile(path.join(folder, `animation${path.extname(video.name).toLowerCase()}`), video.bytes);
+  const videoFile = video ? `animation${path.extname(video.name).toLowerCase()}` : undefined;
+  if (video && videoFile) await writeFile(path.join(folder, videoFile), video.bytes);
   const videoUri = video ? toDataUri(video.bytes, video.mime) : undefined;
 
   const voiceCredit = !o.withVoice ? 'celle du navigateur' : voiceSample ? `imitée de ${voiceSample.name}` : `« ${o.voice} »`;
@@ -283,6 +358,7 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     effects: { waterline: o.waterline },
     image: imageUri,
     video: videoUri,
+    palette: o.composition ? findTheme(o.composition.theme).couleurs : undefined,
     voices: set?.voices.length ? set.voices.map((v) => toDataUri(v, 'audio/wav')) : undefined,
     createdAt: new Date().toISOString(),
   });
@@ -324,5 +400,25 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     }
     await writeFile(path.join(folder, 'correspondance.txt'), `${mapping.join('\n')}\n`);
   }
-  return { folder, htmlPaths, scene, seconds: (performance.now() - start) / 1000 };
+  progress('assemblage', 1);
+  // Durée d'écoute : la voix, les pauses, l'ouverture ; sans voix, une estimation d'après le texte.
+  const firstSet = voiceSets[0];
+  const spoken = firstSet
+    ? firstSet.voices.reduce((sum, v) => sum + wavInfo(v).duration, 0) + firstSet.pauses.reduce((a, b) => a + b, 0)
+    : scene.segments.reduce((sum, seg) => sum + seg.text.length / 14 + seg.pause, 0);
+  const meta: StoryMeta = {
+    titre: scene.title,
+    accroche: teaser,
+    motsCles: keywords,
+    texte: scene.segments.map((seg) => seg.text).join(' '),
+    theme: scene.theme,
+    ambiance: scene.ambiance,
+    age: o.age,
+    dureeSecondes: Math.round(spoken + scene.intro + 3),
+    image: imageFile,
+    animation: videoFile,
+    page: comparing ? path.basename(htmlPaths[0]) : 'index.html',
+  };
+  await writeFile(path.join(folder, 'fiche.json'), `${JSON.stringify(meta, null, 2)}\n`);
+  return { folder, htmlPaths, scene, seconds: (performance.now() - start) / 1000, meta };
 }
