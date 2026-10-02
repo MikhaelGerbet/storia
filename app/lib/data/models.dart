@@ -409,13 +409,14 @@ class ServiceState {
 }
 
 class Health {
-  const Health({required this.queue, required this.text, required this.voice, required this.image});
+  const Health({required this.queue, required this.text, required this.voice, required this.image, this.card});
 
   factory Health.fromJson(Map<String, dynamic> json) => Health(
         queue: ServiceState.fromJson(json['file'] as Map<String, dynamic>),
         text: ServiceState.fromJson(json['texte'] as Map<String, dynamic>),
         voice: json['voix'] is Map ? ServiceState.fromJson(json['voix'] as Map<String, dynamic>) : null,
         image: ServiceState.fromJson(json['image'] as Map<String, dynamic>),
+        card: json['carte'] is Map ? ServiceState.fromJson(json['carte'] as Map<String, dynamic>) : null,
       );
 
   final ServiceState queue;
@@ -425,5 +426,8 @@ class Health {
   final ServiceState? voice;
   final ServiceState image;
 
-  List<ServiceState> get problems => [queue, text, ?voice, image].where((s) => !s.ok).toList();
+  /// La carte graphique selon le gardien ; null quand le studio ne la réserve pas.
+  final ServiceState? card;
+
+  List<ServiceState> get problems => [queue, text, ?voice, image, ?card].where((s) => !s.ok).toList();
 }

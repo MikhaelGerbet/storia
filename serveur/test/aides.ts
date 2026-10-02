@@ -69,6 +69,7 @@ export function testConfig(o: Partial<Config> & Pick<Config, 'bibliotheque' | 'r
     app: path.join(o.bibliotheque, '..', 'app-absente'),
     lecteur: path.join(ROOT_DIR, 'prototype', 'intro-pirate', 'index.html'),
     travailleur: true,
+    gardien: null,
     ...o,
   };
 }

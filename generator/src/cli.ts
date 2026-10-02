@@ -1,6 +1,8 @@
 // Générateur d'intro « grotte pirate » : npm run generer -- --age 6-8 --idee "…"
 import path from 'node:path';
 import { parseArgs } from 'node:util';
+import { gardienState, reserveGpu } from '../../gardien/src/client.ts';
+import type { GpuLease } from '../../gardien/src/client.ts';
 import { runPipeline } from './pipeline.ts';
 import { AGE_BANDS } from './scene.ts';
 import type { AgeBand } from './scene.ts';
@@ -43,6 +45,9 @@ Options :
   --tts <url>            serveur de voix (défaut : http://localhost:8001). Répète l'option pour
                          comparer plusieurs voix à l'aveugle sur le même texte
   --comfy <url>          défaut : http://127.0.0.1:8000 (ComfyUI Desktop ; 8188 pour une installation manuelle)
+  --gardien <url>        gardien de la carte graphique : s'il tourne, on lui réserve la carte d'abord
+                         (défaut : http://127.0.0.1:7870)
+  --sans-gardien         ne réserve pas la carte graphique
   -h, --aide             affiche cette aide`;
 
 async function main(): Promise<void> {
@@ -70,6 +75,8 @@ async function main(): Promise<void> {
       ollama: { type: 'string', default: 'http://localhost:11434' },
       tts: { type: 'string', multiple: true, default: ['http://localhost:8001'] },
       comfy: { type: 'string', default: 'http://127.0.0.1:8000' },
+      gardien: { type: 'string', default: 'http://127.0.0.1:7870' },
+      'sans-gardien': { type: 'boolean', default: false },
       aide: { type: 'boolean', short: 'h', default: false },
     },
     strict: true,
@@ -89,6 +96,23 @@ async function main(): Promise<void> {
   const wanSteps = Number(values['wan-etapes']);
   if (!Number.isInteger(wanSteps) || wanSteps < 2 || wanSteps > 60) throw new Error('--wan-etapes attend un nombre entier entre 2 et 60.');
 
+  // Si le gardien tourne, on lui réserve la carte : Oula ou une histoire du studio ne la prendront pas en même temps.
+  let lease: GpuLease | null = null;
+  if (!values['sans-gardien'] && (await gardienState(values.gardien))) {
+    let shown: string | null = null;
+    lease = await reserveGpu({
+      url: values.gardien,
+      client: 'storia-generateur',
+      motif: values.scene ? path.basename(values.scene) : 'génération en ligne de commande',
+      priorite: 'normale',
+      onWait: (why) => {
+        if (why && why !== shown) console.log(`La carte graphique ${why}…`);
+        shown = why;
+      },
+    });
+  }
+  const released = () => lease?.release();
+  process.once('exit', () => void released());
   const result = await runPipeline({
     age: values.age as AgeBand,
     idea: values.idee,
@@ -118,7 +142,8 @@ async function main(): Promise<void> {
     waterline,
     seed,
     log: (message) => console.log(message),
-  });
+    signal: lease?.revoked,
+  }).finally(released);
   const pages = result.htmlPaths.map((p) => `  ${p}`).join('\n');
   const what = result.htmlPaths.length > 1 ? 'Écoute ces pages sans regarder correspondance.txt, puis compare' : 'Ouvre ce fichier dans ton navigateur';
   console.log(`\nTerminé en ${result.seconds.toFixed(0)} s. ${what} :\n${pages}`);

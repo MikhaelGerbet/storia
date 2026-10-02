@@ -99,7 +99,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const writer = await startFakeWriter('mistral-small3.2', 4000);
   const running = await startStudio(
-    ['--bibliotheque', path.join(SERVEUR_DIR, 'bibliotheque-demo'), ...args, '--ollama', writer, '--modele', 'mistral-small3.2', '--sans-voix', '--sans-wan'],
+    ['--bibliotheque', path.join(SERVEUR_DIR, 'bibliotheque-demo'), ...args, '--ollama', writer, '--modele', 'mistral-small3.2', '--sans-voix', '--sans-wan', '--sans-gardien'],
     'Storia (démo, faux conteur et voix du navigateur)',
   );
   if (!running) return;

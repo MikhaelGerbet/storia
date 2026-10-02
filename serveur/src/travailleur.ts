@@ -4,6 +4,9 @@ import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { UnrecoverableError, Worker } from 'bullmq';
 import type { Job, RedisOptions } from 'bullmq';
+import { ensureService, reserveGpu } from '../../gardien/src/client.ts';
+import { findIngredient, findTheme } from '../../generator/src/catalogue.ts';
+import type { Composition } from '../../generator/src/catalogue.ts';
 import { runPipeline } from '../../generator/src/pipeline.ts';
 import type { PipelineOptions, PipelineProgress, PipelineResult, PipelineStep } from '../../generator/src/pipeline.ts';
 import type { WanInstall } from '../../generator/src/wan.ts';
@@ -98,23 +101,38 @@ export interface WorkerOptions {
 }
 
 /**
- * Attend qu'Ollama et le serveur de voix répondent, en le disant dans la progression.
- * Lancer un service oublié suffit alors : la fabrication repart d'elle-même. Un modèle absent, lui, ne viendra pas seul.
+ * Attend qu'Ollama réponde, en le disant dans la progression (sans tenir la carte graphique : vérifier ne coûte rien).
+ * Lancer Ollama suffit alors : la fabrication repart d'elle-même. Un modèle absent, lui, ne viendra pas seul.
  */
-async function waitForServices(o: WorkerOptions, tracker: ProgressTracker, signal: AbortSignal | undefined): Promise<void> {
+async function waitForText(o: WorkerOptions, tracker: ProgressTracker, signal: AbortSignal | undefined): Promise<void> {
   for (;;) {
-    const problems: string[] = [];
     const text = await checkOllama(o.config.ollama, o.config.modele);
     if (text.modeleManquant) throw new UnrecoverableError(text.detail);
-    if (!text.ok) problems.push(text.detail);
-    if (o.config.tts) {
-      const voice = await checkVoice(o.config.tts);
-      if (!voice.ok) problems.push(voice.detail);
-    }
-    tracker.waiting(problems.length ? problems.join(' ') : null);
-    if (!problems.length) return;
+    tracker.waiting(text.ok ? null : text.detail);
+    if (text.ok) return;
     await sleep(o.retryMs ?? 5000, undefined, { signal });
   }
+}
+
+/**
+ * Le serveur de voix répond-il ? Sinon, le gardien sait peut-être le lancer (une fois par histoire) :
+ * après un redémarrage du PC, rien n'est à lancer à la main.
+ */
+async function voiceReady(o: WorkerOptions, tracker: ProgressTracker, signal: AbortSignal | undefined, attempt: { started: boolean }): Promise<boolean> {
+  if (!o.config.tts) return true;
+  let voice = await checkVoice(o.config.tts);
+  if (!voice.ok && o.config.gardien && !attempt.started) {
+    attempt.started = true;
+    tracker.waiting('Le serveur de voix démarre…');
+    if (await ensureService(o.config.gardien, 'voix', signal)) voice = await checkVoice(o.config.tts);
+  }
+  tracker.waiting(voice.ok ? null : voice.detail);
+  return voice.ok;
+}
+
+/** Ce que le gardien affiche de cette histoire : « Histoire · Pirates · Renarde ». */
+function gpuLabel(c: Composition): string {
+  return ['Histoire', findTheme(c.theme).label, findIngredient('heros', c.heros)?.label].filter(Boolean).join(' · ');
 }
 
 export function startWorker(o: WorkerOptions): Worker<CreationData, CreationResult> {
@@ -132,27 +150,63 @@ export function startWorker(o: WorkerOptions): Worker<CreationData, CreationResu
       job.updateProgress(p).catch(() => {});
     });
     try {
-      await waitForServices(o, tracker, signal);
-      const result = await pipeline({
-        age: composition.age,
-        composition,
-        folder,
-        model: config.modele,
-        voice: 'estelle', // voix de Pocket TTS ; le serveur de voix du projet a déjà la sienne
-        workflowPath: config.workflow ?? '',
-        withVoice: config.tts !== null,
-        withImage: Boolean(o.wan || config.workflow),
-        outDir: config.bibliotheque,
-        playerPath: config.lecteur,
-        ollamaUrl: config.ollama,
-        ttsUrls: config.tts ? [config.tts] : [],
-        comfyUrl: config.comfy,
-        waterline: 0.62,
-        wan: o.wan ? { dir: o.wan.appDir, imageModel: config.wan.image, steps: config.wan.etapes, modelsDir: config.wan.modeles, animate: animation } : undefined,
-        log,
-        onProgress: (p) => tracker.update(p),
-        signal,
-      });
+      const attempt = { started: false };
+      let reprise = false;
+      let result: PipelineResult | undefined;
+      while (!result) {
+        await waitForText(o, tracker, signal);
+        // La carte graphique se réserve auprès du gardien : un seul programme à la fois (Oula, un jeu…).
+        const lease = config.gardien
+          ? await reserveGpu({
+              url: config.gardien,
+              client: 'storia',
+              motif: gpuLabel(composition),
+              priorite: 'haute', // un enfant attend son histoire
+              reprise,
+              signal,
+              onWait: (why) => tracker.waiting(why ? `La carte graphique ${why}.` : null),
+            })
+          : null;
+        const working = lease ? (signal ? AbortSignal.any([signal, lease.revoked]) : lease.revoked) : signal;
+        try {
+          if (!(await voiceReady(o, tracker, working, attempt))) {
+            // Sans voix, inutile de garder la carte : on la rend aux autres, et on réessaie un peu plus tard.
+            await lease?.release();
+            await sleep(o.retryMs ?? 5000, undefined, { signal });
+            continue;
+          }
+          result = await pipeline({
+            age: composition.age,
+            composition,
+            folder,
+            model: config.modele,
+            voice: 'estelle', // voix de Pocket TTS ; le serveur de voix du projet a déjà la sienne
+            workflowPath: config.workflow ?? '',
+            withVoice: config.tts !== null,
+            withImage: Boolean(o.wan || config.workflow),
+            outDir: config.bibliotheque,
+            playerPath: config.lecteur,
+            ollamaUrl: config.ollama,
+            ttsUrls: config.tts ? [config.tts] : [],
+            comfyUrl: config.comfy,
+            waterline: 0.62,
+            wan: o.wan ? { dir: o.wan.appDir, imageModel: config.wan.image, steps: config.wan.etapes, modelsDir: config.wan.modeles, animate: animation } : undefined,
+            log,
+            onProgress: (p) => tracker.update(p),
+            signal: working,
+          });
+        } catch (err) {
+          // Un jeu a réclamé la carte (ou le gardien l'a perdue) : l'histoire recommencera quand elle sera rendue.
+          if (lease && !signal?.aborted && !(await lease.check())) {
+            reprise = true;
+            log('La carte graphique a été reprise (mode jeu) : l’histoire recommencera quand elle sera libre.');
+            continue;
+          }
+          throw err;
+        } finally {
+          await lease?.release();
+        }
+      }
       tracker.stop();
       const meta = result.meta;
       // Après un arrêt brutal du serveur, la tâche reprend du début : l'histoire a pu être rangée entre-temps.

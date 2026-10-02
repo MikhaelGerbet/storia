@@ -70,6 +70,18 @@ void main() {
     expect(creation.progress?.steps.map((s) => s.step), [MakingStep.texte, MakingStep.voix, MakingStep.assemblage]);
   });
 
+  test('l’état du studio signale un gardien de la carte graphique arrêté', () {
+    final health = Health.fromJson({
+      'file': {'ok': true, 'detail': 'Redis'},
+      'texte': {'ok': true, 'detail': 'Ollama'},
+      'voix': null,
+      'image': {'ok': true, 'detail': 'Wan2GP', 'moteur': 'wan', 'animation': true},
+      'carte': {'ok': false, 'detail': 'Le gardien de la carte graphique ne répond pas'},
+    });
+    expect(health.problems.map((p) => p.detail), ['Le gardien de la carte graphique ne répond pas']);
+    expect(Health.fromJson({...{'file': {'ok': true}, 'texte': {'ok': true}, 'image': {'ok': true}}}).card, isNull);
+  });
+
   test('une histoire dure au moins une minute à l’affichage', () {
     Story story(int seconds) => Story.fromJson({'id': 'a', 'titre': 'T', 'dureeSecondes': seconds, 'lecteur': '/bibliotheque/a/index.html'});
     expect(story(20).durationLabel, '1 min');

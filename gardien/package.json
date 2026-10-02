@@ -1,0 +1,19 @@
+{
+  "name": "storia-gardien",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Le gardien de la carte graphique : une file d'attente pour tous les programmes qui s'en servent (Storia, Oula…), qui la libère quand plus personne n'en a besoin et pendant les jeux.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node src/principal.ts",
+    "test": "node --test --test-timeout=60000 \"test/*.test.ts\"",
+    "verifier": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -21,6 +21,7 @@ const HEALTHY: Health = {
   texte: { ok: true, detail: 'Ollama' },
   voix: { ok: true, detail: 'Voix' },
   image: { ok: true, detail: 'aucune', moteur: null, animation: false },
+  carte: null,
   travailleur: true,
 };
 

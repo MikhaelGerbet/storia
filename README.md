@@ -8,6 +8,7 @@ Des histoires à écouter, générées par IA. On choisit un thème (pirates, es
 |---|---|
 | `app/` | **L'application** (Flutter web). Bibliothèque avec recherche et favoris, création d'une histoire en six cases ou au dé, atelier qui montre la fabrication en direct, écoute en plein écran. Voir son README. |
 | `serveur/` | **Le studio** (TypeScript, Node 22). Il sert l'application, range les histoires (SQLite, recherche plein texte) et les fabrique une à une (file BullMQ sur Redis). Voir son README. |
+| `gardien/` | **Le gardien de la carte graphique.** Il fait passer un par un tous les programmes qui s'en servent (Storia, Oula…), la vide quand plus personne n'en a besoin et la réserve aux jeux. Voir son README. |
 | `generator/` | La chaîne de fabrication d'une histoire : texte avec Ollama, voix, image et animation en boucle avec Wan 2.2 (ou image avec ComfyUI), le tout assemblé dans une page jouable. Utilisable seule en ligne de commande. |
 | `prototype/intro-pirate/` | Le lecteur : voix, ambiance, bruitages, sous-titres, illustration animée. Chaque histoire est une page de ce lecteur. |
 | `voix/` | Serveur de voix local (VoxCPM2, Chatterbox) et guide pour choisir et enregistrer la voix du conteur. |

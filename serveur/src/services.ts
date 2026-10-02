@@ -1,4 +1,5 @@
 // Les services dont le studio a besoin, et leur état : Redis, Ollama, le serveur de voix, l'image.
+import { gardienState } from '../../gardien/src/client.ts';
 import type { WanInstall } from '../../generator/src/wan.ts';
 import { splitVoiceUrl } from '../../generator/src/tts.ts';
 import type { Config } from './config.ts';
@@ -14,6 +15,8 @@ export interface Health {
   /** null : la voix du navigateur (--sans-voix). */
   voix: ServiceState | null;
   image: ServiceState & { moteur: 'wan' | 'comfy' | null; animation: boolean };
+  /** La carte graphique selon le gardien ; null : Storia ne la réserve pas. */
+  carte: ServiceState | null;
   travailleur: boolean;
 }
 
@@ -55,6 +58,14 @@ export async function checkVoice(url: string, timeoutMs = 2500): Promise<Service
   if (!res) return { ok: false, detail: `Le serveur de voix ne répond pas (${base}) : lance-le, puis attends « Voix prête ».` };
   const health = (await res.json().catch(() => ({}))) as { moteur?: string };
   return { ok: true, detail: health.moteur ? `Voix ${health.moteur}` : 'Voix prête' };
+}
+
+export async function checkGpu(url: string): Promise<ServiceState> {
+  const state = await gardienState(url);
+  if (!state) return { ok: false, detail: `Le gardien de la carte graphique ne répond pas (${url}) : lance-le (voir gardien/README.md).` };
+  const { carte } = state;
+  if (carte.pause) return { ok: true, detail: carte.pause.raison === 'jeu' ? `Mode jeu (${carte.pause.detail}) : les histoires attendent la fin de la partie.` : 'Mode jeu : les histoires attendent.' };
+  return { ok: true, detail: carte.detenteur ? `Carte graphique utilisée par ${carte.detenteur.client}` : 'Carte graphique libre' };
 }
 
 export async function checkImage(config: Config, wan: WanInstall | null): Promise<Health['image']> {

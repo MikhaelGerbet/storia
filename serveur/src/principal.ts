@@ -12,7 +12,7 @@ import { Library } from './bibliotheque.ts';
 import { HELP, readConfig } from './config.ts';
 import type { Config } from './config.ts';
 import { Studio, redisOptions } from './file.ts';
-import { abilities, checkImage, checkOllama, checkVoice } from './services.ts';
+import { abilities, checkGpu, checkImage, checkOllama, checkVoice } from './services.ts';
 import type { Health } from './services.ts';
 import { startWorker } from './travailleur.ts';
 
@@ -79,17 +79,19 @@ export async function startStudio(args: string[], banner = 'Storia est prêt'): 
   }
 
   const health = async (): Promise<Health> => {
-    const [redis, texte, voix, image] = await Promise.all([
+    const [redis, texte, voix, image, carte] = await Promise.all([
       studio.ping(),
       checkOllama(cfg.ollama, cfg.modele),
       cfg.tts ? checkVoice(cfg.tts) : Promise.resolve(null),
       checkImage(cfg, wan),
+      cfg.gardien ? checkGpu(cfg.gardien) : Promise.resolve(null),
     ]);
     return {
       file: redis ? { ok: true, detail: 'Redis' } : { ok: false, detail: `Redis ne répond pas (${cfg.redis}) : lance-le pour créer des histoires.` },
       texte: { ok: texte.ok, detail: texte.detail },
       voix,
       image,
+      carte,
       travailleur: cfg.travailleur,
     };
   };
@@ -115,6 +117,7 @@ export async function startStudio(args: string[], banner = 'Storia est prêt'): 
   line('Texte', h.texte);
   line('Voix', h.voix ?? { ok: true, detail: 'celle du navigateur (--sans-voix)' });
   line('Image', h.image);
+  line('Carte graphique', h.carte ?? { ok: true, detail: 'pas de gardien (--sans-gardien) : rien d’autre ne doit s’en servir' });
   if (!cfg.travailleur) console.log('  Fabrication : par un autre processus (--sans-travailleur)');
   console.log('  Ctrl+C pour arrêter.\n');
 

@@ -71,6 +71,9 @@ Pour ouvrir l'application sur une tablette ou un téléphone du même Wi-Fi : `n
 | `--workflow <json>`, `--comfy <url>` | image avec ComfyUI quand Wan2GP n'est pas là |
 | `--app <dir>` | l'application compilée (`app/build/web`) |
 | `--sans-travailleur` | l'API seulement ; un autre processus fabrique les histoires |
+| `--gardien <url>`, `--sans-gardien` | le gardien de la carte graphique (`http://127.0.0.1:7870`), ou aucun si rien d'autre ne s'en sert |
+
+**La carte graphique** se réserve auprès du gardien (`gardien/`) avant chaque histoire, en priorité haute : si Oula s'en sert, l'histoire attend la fin de sa tâche. Un jeu la reprend aussitôt, et l'histoire recommence du début après la partie. Le gardien lance aussi le serveur de voix s'il ne répond pas.
 
 Wan2GP est cherché dans Pinokio comme pour le générateur. Chaque demande choisit ensuite entre une image fixe (rapide) et une image animée (plusieurs minutes de plus), dans les réglages des parents de l'application.
 

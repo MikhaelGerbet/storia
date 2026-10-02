@@ -37,6 +37,7 @@ npm run generer -- --scene scenes/navire-endormi.json --wan
 npm run generer -- --scene scenes/navire-endormi.json --wan --image mon-image.png   # anime ton image
 ```
 
+- Si le gardien de la carte graphique tourne (`gardien/`), le générateur lui réserve la carte avant de commencer : il attend qu'Oula ou une histoire du studio ait fini, et s'arrête si un jeu démarre. `--sans-gardien` pour s'en passer.
 - Wan2GP est cherché dans `C:/pinokio/api`. S'il est ailleurs : `--wan-dossier C:/chemin/vers/app`, le dossier qui contient `wgp.py`. Sa version doit être 9.82 ou plus récente. Sinon, mets-le à jour dans Pinokio.
 - Au premier usage, Wan2GP télécharge les modèles qui lui manquent (plusieurs dizaines de Go pour Wan 2.2) et les accélérateurs « Lightning ». Sa progression s'affiche dans le terminal. Pour les mettre sur un autre disque : `--wan-modeles P:/wan-modeles`. Le générateur l'inscrit dans les réglages de Wan2GP (« Model Checkpoint Folders »), qui le garde : une fois suffit. Les modèles déjà téléchargés restent trouvés où ils sont.
 - L'animation se fait en 4 étapes grâce aux accélérateurs. `--wan-etapes 30` donne la qualité d'origine, mais c'est bien plus lent. Compte plusieurs minutes dans tous les cas.

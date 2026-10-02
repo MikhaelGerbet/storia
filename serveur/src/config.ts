@@ -31,6 +31,8 @@ export interface Config {
   lecteur: string;
   /** false : l'API seulement, les histoires sont fabriquées par un autre processus. */
   travailleur: boolean;
+  /** Le gardien de la carte graphique (gardien/), à qui l'on réserve la carte avant chaque histoire ; null : on ne la réserve pas. */
+  gardien: string | null;
 }
 
 export const HELP = `Le studio Storia : l'application, la bibliothèque d'histoires et la file de création.
@@ -56,6 +58,8 @@ Options :
   --comfy <url>          défaut : http://127.0.0.1:8000
   --app <dir>            application compilée (défaut : app/build/web)
   --sans-travailleur     l'API seulement : un autre processus fabrique les histoires
+  --gardien <url>        le gardien de la carte graphique (défaut : http://127.0.0.1:7870)
+  --sans-gardien         ne réserve pas la carte graphique (si rien d'autre ne s'en sert)
   -h, --aide             affiche cette aide`;
 
 function number(value: string, name: string, min: number, max: number): number {
@@ -86,6 +90,8 @@ export function readConfig(args: string[]): Config | null {
       comfy: { type: 'string', default: 'http://127.0.0.1:8000' },
       app: { type: 'string', default: path.join(ROOT_DIR, 'app', 'build', 'web') },
       'sans-travailleur': { type: 'boolean', default: false },
+      gardien: { type: 'string', default: 'http://127.0.0.1:7870' },
+      'sans-gardien': { type: 'boolean', default: false },
       aide: { type: 'boolean', short: 'h', default: false },
     },
     strict: true,
@@ -119,5 +125,6 @@ export function readConfig(args: string[]): Config | null {
     app: path.resolve(values.app),
     lecteur: path.join(ROOT_DIR, 'prototype', 'intro-pirate', 'index.html'),
     travailleur: !values['sans-travailleur'],
+    gardien: values['sans-gardien'] ? null : url(values.gardien, 'gardien'),
   };
 }

@@ -1,0 +1,30 @@
+{
+  "port": 7870,
+  "ollama": "http://localhost:11434",
+  "inactiviteMinutes": 2,
+  "jeux": {
+    "actif": true,
+    "interrompre": true,
+    "executables": [],
+    "dossiers": [],
+    "ignorer": []
+  },
+  "services": {
+    "voix": {
+      "commande": [
+        "P:/storia/storia/.venv-voxcpm/Scripts/python.exe",
+        "voix/serveur_voix.py",
+        "--voix-ref", "voix/references/conteur2.wav",
+        "--voix-ref-texte", "voix/texte-de-reference.txt"
+      ],
+      "dossier": "P:/storia/storia",
+      "sante": "http://localhost:8001/health",
+      "liberer": "http://localhost:8001/liberer"
+    }
+  },
+  "liberer": [],
+  "wan": {
+    "dossier": null,
+    "modeles": "P:/wan-modeles"
+  }
+}

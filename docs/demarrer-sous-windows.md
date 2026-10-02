@@ -119,6 +119,22 @@ Choisis une des deux façons :
 
 Redis ne garde que la file de création. Les histoires sont rangées ailleurs, dans `serveur/bibliotheque` : tu peux vider Redis sans rien perdre.
 
+### Le gardien de la carte graphique (une seule fois)
+
+Storia n'est pas seul à se servir de la carte graphique (Oula, tes jeux…). Le gardien les fait passer un par un, et vide la carte quand plus personne n'en a besoin. Il lance aussi le serveur de voix tout seul quand une histoire en a besoin.
+
+1. Copie `gardien\gardien.exemple.json` en `gardien\gardien.json`. Vérifie la commande du serveur de voix (le nom de ton extrait de voix) et le dossier des modèles de Wan.
+2. Programme-le, avec le studio, pour qu'ils démarrent à chaque ouverture de session :
+
+   ```powershell
+   cd $HOME/Documents/storia
+   powershell -ExecutionPolicy Bypass -File gardien\windows\installer.ps1 -Studio
+   ```
+
+   Trois raccourcis apparaissent sur le bureau : **Mode jeu**, **Reprendre** et la page du gardien (<http://localhost:7870>). Quand tu lances un jeu Steam, Epic, GOG ou Xbox, le mode jeu s'active de lui-même.
+
+Le détail, et la façon de brancher Oula, sont dans `gardien/README.md`.
+
 ### Installer le studio et compiler l'application (une seule fois)
 
 ```powershell
@@ -133,7 +149,9 @@ Il faut Flutter 3.32 ou plus récent. Si `flutter pub get` se plaint d'une versi
 
 ### Lancer
 
-Une fenêtre par service, comme pour le générateur :
+Avec le gardien programmé ci-dessus, il n'y a rien à lancer : ouvre ta session, Ollama démarre avec Windows, et le gardien lance la voix à la première histoire.
+
+Sans le gardien, une fenêtre par service :
 
 1. **Ollama** tourne déjà.
 2. **La voix**, dans le dossier du projet (le détail est dans `voix/README.md`) :
@@ -143,12 +161,12 @@ Une fenêtre par service, comme pour le générateur :
    ```
 
    Attends « Voix prête ».
-3. **Wan 2.2** : rien à lancer, le studio s'en sert sans son interface. Ne génère rien dans l'interface de Pinokio pendant qu'une histoire se fabrique : la carte graphique ne peut pas tout porter à la fois.
-4. **Le studio** :
+3. **Wan 2.2** : rien à lancer, le studio s'en sert sans son interface. Ferme l'interface Wan de Pinokio quand tu ne t'en sers pas : elle garde le modèle chargé et prive tout le reste de place.
+4. **Le studio**, avec `--sans-gardien` puisqu'il n'y a pas de gardien :
 
    ```powershell
    cd $HOME/Documents/storia/serveur
-   npm start
+   npm start -- --sans-gardien
    ```
 
 Ouvre <http://localhost:3000>. Le studio affiche au démarrage ce qui est prêt (✓) et ce qui manque (✗).
@@ -182,4 +200,6 @@ npm run importer
 | `Le port 3000 est déjà pris` | Un studio tourne déjà dans une autre fenêtre, sinon : `npm start -- --port 3001`. |
 | La page dit « Il manque seulement l'application » | Compile-la : `cd app` puis `flutter build web --no-web-resources-cdn`. |
 | La tablette n'arrive pas à se connecter | Lance avec `--reseau`, vérifie qu'elle est sur le même Wi-Fi, et autorise Node.js dans le pare-feu de Windows (réseaux privés). |
-| L'atelier affiche « En pause » | Il attend un service : son message dit lequel lancer (Ollama ou la voix). L'histoire repart seule. |
+| L'atelier affiche « En pause » | Il attend quelque chose, et son message dit quoi : un service à lancer (Ollama, la voix), la carte graphique (utilisée par Oula, ou réservée à un jeu). L'histoire repart seule. |
+| « Le gardien de la carte graphique ne répond pas » | Lance-le (`npm start` dans `gardien`), ou relance la tâche « Storia - gardien » dans le Planificateur de tâches. Sans gardien : `npm start -- --sans-gardien` pour le studio. |
+| Les histoires ne démarrent pas pendant que tu joues | C'est le mode jeu : elles attendent la fin de la partie. Pour un petit jeu qui ne gêne pas, appuie sur **Reprendre**. |
