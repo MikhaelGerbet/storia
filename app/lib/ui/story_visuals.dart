@@ -68,12 +68,15 @@ class _SparklesPainter extends CustomPainter {
 
 /// La couverture d'une histoire : son illustration si elle en a une, sinon l'illustration de secours de son thème.
 class StoryCover extends StatelessWidget {
-  const StoryCover({super.key, required this.story, required this.catalogue, required this.api, this.emojiScale = 0.5});
+  const StoryCover({super.key, required this.story, required this.catalogue, required this.api, this.emojiScale = 0.5, this.themeBadge = true});
 
   final Story story;
   final Catalogue? catalogue;
   final StoriaApi api;
   final double emojiScale;
+
+  /// Le petit emoji du thème dans un coin de l'illustration de secours.
+  final bool themeBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -82,7 +85,7 @@ class StoryCover extends StatelessWidget {
     final fallback = ThemeArt(
       colors: theme?.colors ?? const [Palette.surfaceTop, Palette.night],
       emoji: hero?.emoji ?? theme?.emoji ?? 'Open book',
-      secondEmoji: hero != null ? theme?.emoji : null,
+      secondEmoji: hero != null && themeBadge ? theme?.emoji : null,
       emojiScale: emojiScale,
     );
     final cover = story.cover;

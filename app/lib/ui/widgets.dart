@@ -444,6 +444,7 @@ class GlowProgressBar extends StatelessWidget {
             curve: Curves.easeOutCubic,
             builder: (context, v, _) => FractionallySizedBox(
               widthFactor: math.max(v, 0.02),
+              heightFactor: 1, // sans enfant, la barre prendrait une hauteur nulle
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: gradient ?? Palette.accentGradient,

@@ -188,7 +188,8 @@ class _Media extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            StoryCover(story: story, catalogue: catalogue, api: api, emojiScale: 0.42),
+            // Le thème est écrit à côté, et le coin du bas est au bouton de lecture.
+            StoryCover(story: story, catalogue: catalogue, api: api, emojiScale: 0.42, themeBadge: false),
             if (loop != null) LoopVideo(url: api.url(loop), poster: story.cover == null ? null : api.url(story.cover!)),
             const DecoratedBox(
               decoration: BoxDecoration(
