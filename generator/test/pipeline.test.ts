@@ -178,3 +178,19 @@ test('une image et une animation déjà faites sont reprises telles quelles, san
   assert.deepEqual((await readdir(result.folder)).sort(), ['animation.mp4', 'image.png', 'index.html', 'prompt-image.txt', 'scene.json']);
   await assert.rejects(runPipeline(options(dir, 'http://127.0.0.1:9', { sceneFile, withVoice: false, videoPath: imagePath })), /Animation non reconnue/);
 });
+
+test('une même voix sous plusieurs réglages se compare à l’aveugle, avec un seul serveur', async (t) => {
+  const mock = await startMockServices({ draft: SAMPLE_DRAFT, narration: {} });
+  t.after(() => mock.close());
+  const dir = await tempDir(t);
+  const sceneFile = path.resolve(import.meta.dirname, '..', 'scenes', 'navire-endormi.json');
+  const variants = [mock.url, `${mock.url}?etapes=24&cfg=2.5`, `${mock.url}/?style=A warm storyteller voice`];
+  const result = await runPipeline(options(dir, mock.url, { sceneFile, withImage: false, ttsUrls: variants }));
+  assert.deepEqual(
+    mock.calls.recit.map((r) => r.reglages),
+    [undefined, { etapes: '24', cfg: '2.5' }, { style: 'A warm storyteller voice' }],
+  );
+  const mapping = await readFile(path.join(result.folder, 'correspondance.txt'), 'utf8');
+  assert.match(mapping, /etapes=24&cfg=2\.5/);
+  assert.equal(result.htmlPaths.length, 3);
+});

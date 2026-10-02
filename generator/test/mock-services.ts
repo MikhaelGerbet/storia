@@ -47,7 +47,7 @@ export function streamingWav(seconds: number, rate = 24000, freq = 220): Buffer 
 
 export interface MockServices {
   url: string;
-  calls: { chat: unknown[]; unload: unknown[]; tts: string[]; recit: { segments: { text: string; pause: number }[] }[]; prompts: unknown[] };
+  calls: { chat: unknown[]; unload: unknown[]; tts: string[]; recit: { segments: { text: string; pause: number }[]; reglages?: Record<string, string> }[]; prompts: unknown[] };
   close: () => Promise<void>;
 }
 
@@ -87,7 +87,7 @@ export async function startMockServices(options: MockOptions): Promise<MockServi
       return res.end(streamingWav(options.wavSeconds?.(text) ?? 0.6));
     }
     if (req.method === 'POST' && pathname === '/recit' && options.narration) {
-      const request = JSON.parse(body.toString()) as { segments: { text: string; pause: number }[] };
+      const request = JSON.parse(body.toString()) as { segments: { text: string; pause: number }[]; reglages?: Record<string, string> };
       calls.recit.push(request);
       const line = (event: unknown) => res.write(`${JSON.stringify(event)}\n`);
       res.writeHead(200, { 'content-type': 'application/x-ndjson' });

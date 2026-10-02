@@ -355,7 +355,7 @@ class TestEngine:
     sample_rate = 24000
     device = "cpu"
 
-    def generate(self, text: str, reference: Path | None = None, style: str | None = None):
+    def generate(self, text: str, reference: Path | None = None, style: str | None = None, settings: dict | None = None):
         rate = self.sample_rate
         ramp = int(0.01 * rate)
         out = [0.0] * int(0.1 * rate)
@@ -421,7 +421,7 @@ class ChatterboxEngine:
             self.model.prepare_conditionals(str(reference), exaggeration=self.exaggeration)
         self.current = reference
 
-    def generate(self, text: str, reference: Path | None = None, style: str | None = None):
+    def generate(self, text: str, reference: Path | None = None, style: str | None = None, settings: dict | None = None):
         with self.lock:  # un seul texte à la fois : le modèle n'est pas prévu pour le parallélisme
             if self.model is None:
                 print("Rechargement de Chatterbox…", flush=True)
@@ -479,15 +479,21 @@ class VoxCPMEngine:
         free_gpu_memory()
         return True
 
-    def generate(self, text: str, reference: Path | None = None, style: str | None = None):
-        """`style` remplace la consigne de ton ; il sert aussi à inventer une voix, sans extrait."""
+    def generate(self, text: str, reference: Path | None = None, style: str | None = None, settings: dict | None = None):
+        """`style` remplace la consigne de ton ; il sert aussi à inventer une voix, sans extrait.
+        `settings` : réglages propres à un récit (étapes, cfg, style, amorce), pour comparer à l'aveugle."""
+        settings = settings or {}
+        if style is None and settings.get("style"):
+            style = settings["style"]
         ref = reference or self.default_reference
-        continuing = self.continuation and style is None and ref is not None and ref == self.default_reference
+        continuing = (
+            self.continuation and settings.get("amorce") != "non" and style is None and ref is not None and ref == self.default_reference
+        )
         prefix = (style if style is not None else "" if continuing else self.style).strip().strip("()")
         options: dict = {
             "text": f"({prefix}){text}" if prefix else text,
-            "cfg_value": self.cfg_value,
-            "inference_timesteps": self.steps,
+            "cfg_value": settings.get("cfg", self.cfg_value),
+            "inference_timesteps": settings.get("etapes", self.steps),
             "retry_badcase": False,  # le serveur vérifie lui-même chaque lecture, Whisper à l'appui
             "retry_badcase_ratio_threshold": self.length_cap,
         }
@@ -639,10 +645,10 @@ class Narrator:
                 take.problem = f"Whisper a entendu « {take.heard[:160]} » ({take.similarity:.0%} de ressemblance)"
         return take
 
-    def say(self, text: str, reference: Path | None = None, style: str | None = None) -> Take:
+    def say(self, text: str, reference: Path | None = None, style: str | None = None, settings: dict | None = None) -> Take:
         best: Take | None = None
         for attempt in range(1, self.attempts + 1):
-            samples, rate = self.engine.generate(text, reference, style)
+            samples, rate = self.engine.generate(text, reference, style, settings)
             if np is None:
                 return Take(samples, rate)
             take = self.check(tidy(samples, rate), rate, text)
@@ -655,13 +661,13 @@ class Narrator:
         best.attempts = self.attempts
         return best
 
-    def narrate(self, texts: list[str], pauses: list[float], reference: Path | None, emit) -> None:
+    def narrate(self, texts: list[str], pauses: list[float], reference: Path | None, emit, settings: dict | None = None) -> None:
         if np is None:  # Python sans numpy : un segment après l'autre, sans vérification ni découpe
             emit({"type": "debut", "phrases": len(texts), "relecture": None})
             clips = []
             for number, text in enumerate(texts, 1):
                 started = time.perf_counter()
-                samples, rate = self.engine.generate(text, reference)
+                samples, rate = self.engine.generate(text, reference, None, settings)
                 clips.append(wav_bytes(samples, rate))
                 emit({"type": "phrase", "numero": number, "total": len(texts), "secondes": round(time.perf_counter() - started, 1), "parole": round(len(samples) / rate, 1), "essais": 1})
             emit({"type": "fin", "segments": [{"wav": base64.b64encode(c).decode("ascii"), "pause": p} for c, p in zip(clips, pauses)]})
@@ -675,7 +681,7 @@ class Narrator:
             text = sentence_text(texts, pauses, idxs)
             print(f"… phrase {number}/{len(groups)} : « {text[:100]} »", flush=True)
             started = time.perf_counter()
-            take = self.say(text, reference)
+            take = self.say(text, reference, settings=settings)
             rate = take.rate
             pieces, removed = split(take, [texts[i] for i in idxs])
             for k, i in enumerate(idxs):
@@ -738,6 +744,33 @@ class Narrator:
         print(f"Voix créée en {time.perf_counter() - started:.0f} s : {target.resolve()}")
         print("Écoute ce fichier. Si la voix ne te plaît pas, supprime-le et relance : chaque création donne une voix différente.")
         return take.problem is None and take.similarity is not None
+
+
+def parse_settings(raw) -> dict:
+    """Réglages propres à un récit, pour comparer plusieurs réglages à l'aveugle avec un seul serveur."""
+    if not raw:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("réglages illisibles")
+    out: dict = {}
+    for key, value in raw.items():
+        if key == "etapes":
+            out[key] = int(value)
+            if not 2 <= out[key] <= 60:
+                raise ValueError("etapes : entre 2 et 60")
+        elif key == "cfg":
+            out[key] = float(value)
+            if not 0.5 <= out[key] <= 6:
+                raise ValueError("cfg : entre 0.5 et 6")
+        elif key == "style":
+            out[key] = str(value).strip()[:300]
+        elif key == "amorce":
+            if value not in ("oui", "non"):
+                raise ValueError("amorce : oui ou non")
+            out[key] = value
+        else:
+            raise ValueError(f"réglage inconnu : {key} (possibles : etapes, cfg, style, amorce)")
+    return out
 
 
 # --------------------------------------------------------------------------- serveur HTTP
@@ -832,8 +865,11 @@ class Handler(BaseHTTPRequestHandler):
             if not texts or not all(texts):
                 raise ValueError("segments vides")
             reference = self._reference(base64.b64decode(request["voice_wav"]), request.get("voice_name")) if request.get("voice_wav") else None
+            settings = parse_settings(request.get("reglages"))
         except Exception as err:
             return self._json(400, {"detail": f"scène illisible : {err}"})
+        if settings:
+            print("Réglages de ce récit : " + ", ".join(f"{k}={v}" for k, v in settings.items()), flush=True)
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
@@ -844,7 +880,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
         try:
-            self.narrator.narrate(texts, pauses, reference, emit)
+            self.narrator.narrate(texts, pauses, reference, emit, settings)
         except (BrokenPipeError, ConnectionError):
             print("Le générateur n'attend plus ce récit (connexion fermée de son côté).", flush=True)
         except Exception as err:

@@ -179,3 +179,20 @@ npm run generer -- --scene scenes/navire-endormi.json --sans-image --tts http://
 ```
 
 Chaque voix lit le même texte. Tu obtiens une page par voix (`voix-A.html`, `voix-B.html`), avec des lettres tirées au sort. Écoute, choisis, et seulement ensuite ouvre `correspondance.txt` pour savoir quel moteur se cache derrière chaque lettre.
+
+### Comparer des réglages avec un seul serveur
+
+Une adresse de voix peut porter des réglages, après un `?`. Le même serveur lit alors l'histoire plusieurs fois, une par réglage, et tu compares à l'aveugle de la même façon :
+
+```bash
+npm run generer -- --scene scenes/navire-endormi.json --sans-image --tts "http://localhost:8001" --tts "http://localhost:8001?etapes=24&cfg=2.5" --tts "http://localhost:8001?etapes=24&style=A warm and expressive storyteller voice, clear articulation, lively intonation"
+```
+
+| Réglage | Effet (VoxCPM2) |
+|---|---|
+| `etapes` | Étapes de génération, de 2 à 60 : plus = son plus net, plus lent (défaut 10) |
+| `cfg` | De 0.5 à 6 : plus haut = suit plus fidèlement la voix et le texte (défaut 2.0) |
+| `style` | Consigne de ton, en anglais. La voix est alors imitée sans son extrait comme amorce, pour que la consigne compte |
+| `amorce=non` | Imite la voix sans son extrait comme amorce |
+
+Garde les guillemets autour de chaque adresse : ils protègent les `&` et les espaces.

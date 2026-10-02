@@ -1794,9 +1794,17 @@ function resetMine() {
 /* =========================================================================
    10. DÉMARRAGE
    ========================================================================= */
-const sceneCanvas = $('#scene');
 let renderer;
-try { renderer = new Renderer(sceneCanvas); } catch (e) { renderer = new FlatRenderer(sceneCanvas); }
+try { renderer = new Renderer($('#scene')); } catch (e) { renderer = new FlatRenderer($('#scene')); }
+// Carte graphique saturée (par d'autres logiciels d'IA, par exemple) : le navigateur peut retirer la 3D à la page.
+// On passe alors au dessin simple, sur une toile neuve, plutôt que de laisser un écran vide.
+$('#scene').addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  const fresh = e.target.cloneNode(false);
+  e.target.replaceWith(fresh);
+  renderer = new FlatRenderer(fresh);
+  if (current) renderer.setScene(current);
+});
 const sparks = new Sparks($('#sparks'));
 standIn = paintStandIn();
 setScene(standIn);

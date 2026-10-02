@@ -58,7 +58,7 @@ class Flaky:
     def __init__(self, failures: int):
         self.failures, self.calls, self.inner = failures, 0, sv.TestEngine()
 
-    def generate(self, text, reference=None, style=None):
+    def generate(self, text, reference=None, style=None, settings=None):
         self.calls += 1
         if self.calls <= self.failures:
             return np.concatenate([tone(0.5, 24000), quiet(4.0, 24000), tone(9.0, 24000)]), 24000
@@ -189,7 +189,7 @@ class AudioTests(unittest.TestCase):
                 was, self.loaded = self.loaded, False
                 return was
 
-            def generate(self, text, reference=None, style=None):
+            def generate(self, text, reference=None, style=None, settings=None):
                 if not self.loaded:
                     self.loaded, self.loads = True, self.loads + 1
                 return super().generate(text)
@@ -200,6 +200,22 @@ class AudioTests(unittest.TestCase):
         self.assertFalse(narrator.release())  # déjà libérée
         narrator.say("Jusqu'à cette nuit.")
         self.assertEqual(engine.loads, 1)
+
+    def test_settings_reach_the_engine(self):
+        seen = []
+
+        class Recorder(sv.TestEngine):
+            def generate(self, text, reference=None, style=None, settings=None):
+                seen.append(settings)
+                return super().generate(text)
+
+        narrator = sv.Narrator(Recorder(), None, attempts=1)
+        settings = sv.parse_settings({"etapes": "24", "cfg": "2.5", "style": "(warm storyteller)"})
+        self.assertEqual(settings, {"etapes": 24, "cfg": 2.5, "style": "(warm storyteller)"})
+        narrator.narrate(TEXTS, PAUSES, None, lambda e: None, settings)
+        self.assertEqual(seen, [settings, settings])  # une lecture par phrase, chacune avec les réglages
+        with self.assertRaises(ValueError):
+            sv.parse_settings({"vitesse": 2})
 
     def test_narrate(self):
         events = []

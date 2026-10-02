@@ -25,6 +25,13 @@ interface FormField {
   type?: string;
 }
 
+/** Une adresse de serveur de voix peut porter des réglages, pour les comparer : http://localhost:8001?etapes=24&cfg=2.5 */
+export function splitVoiceUrl(url: string): { base: string; settings: Record<string, string> } {
+  const question = url.indexOf('?');
+  if (question < 0) return { base: url.replace(/\/+$/, ''), settings: {} };
+  return { base: url.slice(0, question).replace(/\/+$/, ''), settings: Object.fromEntries(new URLSearchParams(url.slice(question + 1))) };
+}
+
 export function encodeMultipart(fields: FormField[], boundary: string): Buffer {
   const parts: Buffer[] = [];
   for (const field of fields) {
@@ -61,7 +68,7 @@ export async function synthesize(text: string, o: TtsOptions): Promise<Uint8Arra
   const timeoutMs = o.timeoutMs ?? 30 * 60_000;
   let res: { status: number; body: Buffer };
   try {
-    res = await post(new URL(`${o.url}/tts`), encodeMultipart(fields, boundary), `multipart/form-data; boundary=${boundary}`, timeoutMs);
+    res = await post(new URL(`${splitVoiceUrl(o.url).base}/tts`), encodeMultipart(fields, boundary), `multipart/form-data; boundary=${boundary}`, timeoutMs);
   } catch (err) {
     if ((err as { code?: string }).code === 'STORIA_TIMEOUT') {
       throw new Error(`Le serveur de voix n'a pas répondu en ${Math.round(timeoutMs / 60_000)} minutes pour une seule phrase. Regarde sa fenêtre : s'il tourne sur le processeur, installe PyTorch pour ta carte graphique (voir voix/README.md).`);
@@ -142,10 +149,12 @@ function postLines(url: URL, body: Buffer, timeoutMs: number, onLine: (line: str
 
 /** Fait lire toute une scène au serveur de voix (POST /recit), en suivant sa progression. */
 export async function narrate(segments: NarrationSegment[], o: TtsOptions & { onEvent?: (event: NarrationEvent) => void }): Promise<Narration> {
+  const { base, settings } = splitVoiceUrl(o.url);
   const request = {
     segments,
     voice_wav: o.voiceSample ? Buffer.from(o.voiceSample.bytes).toString('base64') : undefined,
     voice_name: o.voiceSample?.name,
+    reglages: Object.keys(settings).length ? settings : undefined,
   };
   const timeoutMs = o.timeoutMs ?? 30 * 60_000;
   const report: NarrationEvent[] = [];
@@ -154,7 +163,7 @@ export async function narrate(segments: NarrationSegment[], o: TtsOptions & { on
   let started = false;
   let res: { status: number; text: string };
   try {
-    res = await postLines(new URL(`${o.url}/recit`), Buffer.from(JSON.stringify(request)), timeoutMs, (line) => {
+    res = await postLines(new URL(`${base}/recit`), Buffer.from(JSON.stringify(request)), timeoutMs, (line) => {
       const event = JSON.parse(line) as Omit<NarrationEvent, 'type'> & { type: string; detail?: string; segments?: { wav: string; pause: number }[] };
       started = true;
       if (event.type === 'fin') done = { segments: event.segments ?? [] };
@@ -186,7 +195,7 @@ export async function narrate(segments: NarrationSegment[], o: TtsOptions & { on
 /** Demande au serveur de voix de libérer la carte graphique pour une autre application ; il rechargera son modèle au besoin. */
 export async function releaseVoice(url: string): Promise<boolean> {
   try {
-    return (await post(new URL(`${url}/liberer`), Buffer.alloc(0), 'application/json', 60_000)).status === 200;
+    return (await post(new URL(`${splitVoiceUrl(url).base}/liberer`), Buffer.alloc(0), 'application/json', 60_000)).status === 200;
   } catch {
     return false;
   }
