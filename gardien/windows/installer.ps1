@@ -3,8 +3,9 @@
 #
 #   powershell -ExecutionPolicy Bypass -File gardien\windows\installer.ps1            le gardien
 #   powershell -ExecutionPolicy Bypass -File gardien\windows\installer.ps1 -Studio    le gardien et le studio Storia
+#   powershell -ExecutionPolicy Bypass -File gardien\windows\installer.ps1 -Studio -Reseau   et l'application ouverte aux tablettes du Wi-Fi
 #   powershell -ExecutionPolicy Bypass -File gardien\windows\installer.ps1 -Retirer   tout enlever
-param([switch]$Studio, [switch]$Retirer)
+param([switch]$Studio, [switch]$Reseau, [switch]$Retirer)
 $ErrorActionPreference = 'Stop'
 
 $gardien = Split-Path -Parent $PSScriptRoot
@@ -41,7 +42,11 @@ function Programmer([string]$nom, [string]$dossier, [string]$arguments) {
 }
 
 Programmer 'Storia - gardien' $gardien 'src/principal.ts'
-if ($Studio) { Programmer 'Storia - studio' (Join-Path $racine 'serveur') '--disable-warning=ExperimentalWarning src/principal.ts' }
+if ($Studio) {
+  $ouvert = if ($Reseau) { ' --reseau' } else { '' }
+  Programmer 'Storia - studio' (Join-Path $racine 'serveur') "--disable-warning=ExperimentalWarning src/principal.ts$ouvert"
+  if ($Reseau) { Write-Host "Adresse à taper sur la tablette : au début de $(Join-Path $racine 'serveur\journaux\console.log')" }
+}
 
 $shell = New-Object -ComObject WScript.Shell
 foreach ($nom in 'Mode jeu', 'Reprendre') {

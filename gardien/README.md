@@ -29,6 +29,8 @@ powershell -ExecutionPolicy Bypass -File gardien\windows\installer.ps1 -Studio
 
 Le script programme le gardien (et, avec `-Studio`, le studio Storia) pour qu'il démarre caché à chaque ouverture de session. Il pose aussi trois raccourcis sur le bureau : **Mode jeu**, **Reprendre** et la page du gardien. Ce qu'ils affichent va dans `gardien\journaux\` (et `serveur\journaux\`). Pour tout retirer : `installer.ps1 -Retirer`.
 
+Ajoute `-Reseau` pour ouvrir l'application aux tablettes et aux téléphones du Wi-Fi : l'adresse à taper est au début de `serveur\journaux\console.log`. Si tout était déjà installé, ferme ta session et rouvre-la pour que le studio reparte avec ce réglage.
+
 Après un redémarrage, il faut ouvrir sa session pour que le gardien démarre. Si Oula doit tourner à 4 h du matin après une mise à jour nocturne de Windows, active l'ouverture de session automatique, ou demande-moi une tâche qui démarre sans session.
 
 ## Réglages : gardien.json
@@ -128,7 +130,11 @@ Les requêtes `POST` doivent être en JSON : une page web ne peut donc pas les e
 
 ## Si un jour l'IA part sur une autre machine
 
-Lance le gardien sur cette machine avec `npm start -- --reseau`, puis indique son adresse aux programmes. Pour le studio : `npm start -- --gardien http://192.168.1.30:7870`. Pour Oula : le paramètre `url` du client. Le mode jeu ne sert plus à rien là-bas : `"jeux": {"actif": false}`.
+Installe sur cette machine tout ce qui se sert de la carte graphique : Ollama, le serveur de voix, Wan2GP, le gardien, le studio Storia et Oula. Ils s'y parlent sur `127.0.0.1`, comme aujourd'hui : aucune adresse à changer. Le studio et Oula ne peuvent pas rester sur ton PC de jeu : le studio lance Wan2GP sur la machine où il tourne, et Wan2GP lit ses images et écrit ses vidéos sur son propre disque.
+
+- Programme-les avec `installer.ps1 -Studio -Reseau` : ton PC et la tablette ouvrent l'application avec l'adresse de cette machine.
+- Le mode jeu ne sert plus à rien là-bas : `"jeux": {"actif": false}` dans `gardien.json`.
+- Pour qu'elle reparte seule après une mise à jour de Windows, active l'ouverture de session automatique, par exemple avec l'outil Autologon de Microsoft (Sysinternals).
 
 ## Tests
 

@@ -171,7 +171,12 @@ Sans le gardien, une fenêtre par service :
 
 Ouvre <http://localhost:3000>. Le studio affiche au démarrage ce qui est prêt (✓) et ce qui manque (✗).
 
-Pour la **tablette** ou le **téléphone**, sur le même Wi-Fi : lance `npm start -- --reseau` et tape sur la tablette l'adresse qu'il affiche (par exemple `http://192.168.1.20:3000`). La première fois, Windows demande d'autoriser Node.js sur le réseau : accepte pour les **réseaux privés**.
+Pour la **tablette** ou le **téléphone**, sur le même Wi-Fi, le studio doit s'ouvrir au réseau :
+
+- avec le gardien, relance l'installation en ajoutant `-Reseau` (`installer.ps1 -Studio -Reseau`), puis ferme ta session et rouvre-la. L'adresse à taper est au début de `serveur\journaux\console.log` ;
+- sans le gardien, lance `npm start -- --sans-gardien --reseau`, qui affiche l'adresse.
+
+Tape-la sur la tablette (par exemple `http://192.168.1.20:3000`). La première fois, Windows demande d'autoriser Node.js sur le réseau : accepte pour les **réseaux privés**.
 
 ### Retrouver les histoires déjà générées
 
@@ -199,7 +204,7 @@ npm run importer
 | `Redis ne répond pas sur redis://127.0.0.1:6379` | Lance Redis : Docker Desktop (le conteneur `storia-redis`), ou `sudo service redis-server start` dans Ubuntu. |
 | `Le port 3000 est déjà pris` | Un studio tourne déjà dans une autre fenêtre, sinon : `npm start -- --port 3001`. |
 | La page dit « Il manque seulement l'application » | Compile-la : `cd app` puis `flutter build web --no-web-resources-cdn`. |
-| La tablette n'arrive pas à se connecter | Lance avec `--reseau`, vérifie qu'elle est sur le même Wi-Fi, et autorise Node.js dans le pare-feu de Windows (réseaux privés). |
+| La tablette n'arrive pas à se connecter | Installe le studio avec `-Reseau` (ou lance-le avec `--reseau`), vérifie qu'elle est sur le même Wi-Fi, et autorise Node.js dans le pare-feu de Windows (réseaux privés). |
 | L'atelier affiche « En pause » | Il attend quelque chose, et son message dit quoi : un service à lancer (Ollama, la voix), la carte graphique (utilisée par Oula, ou réservée à un jeu). L'histoire repart seule. |
 | « Le gardien de la carte graphique ne répond pas » | Lance-le (`npm start` dans `gardien`), ou relance la tâche « Storia - gardien » dans le Planificateur de tâches. Sans gardien : `npm start -- --sans-gardien` pour le studio. |
 | Les histoires ne démarrent pas pendant que tu joues | C'est le mode jeu : elles attendent la fin de la partie. Pour un petit jeu qui ne gêne pas, appuie sur **Reprendre**. |
